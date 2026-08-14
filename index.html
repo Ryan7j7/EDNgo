@@ -182,6 +182,7 @@ const CATALOGUE = {
   ],
 };
 
+const VERSION = "v22";
 const KEY = "edn-go-v1";
 const KEY_ANCIEN = "edn-v3";
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -1200,6 +1201,508 @@ function MyCards({ fiches, onMaj, items, colleges, onOuvrirItem }) {
   );
 }
 
+/* ================== À faire ================== */
+const JOURS = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"];
+const MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+  "septembre", "octobre", "novembre", "décembre"];
+const iso = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const lundiDe = (d) => {
+  const x = new Date(d);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  x.setHours(12, 0, 0, 0);
+  return x;
+};
+const HT = 46; // hauteur d'une heure, en pixels
+
+const BLOCS = [
+  { bg: "#1B3A57", fg: "#9AD2F5", bar: "#54A9EA" },
+  { bg: "#33201E", fg: "#F3A49E", bar: "#E4685D" },
+  { bg: "#123227", fg: "#7FDCBD", bar: "#35B48C" },
+  { bg: "#3A2F17", fg: "#F3D08F", bar: "#EAAE43" },
+  { bg: "#251F45", fg: "#C3B0F2", bar: "#8B6FE0" },
+  { bg: "#331A28", fg: "#F2A9C8", bar: "#D96A96" },
+  { bg: "#1D2E1A", fg: "#A8D993", bar: "#6BB84E" },
+  { bg: "#15303F", fg: "#95CEEF", bar: "#3E8CC4" },
+  { bg: "#331F14", fg: "#F2BC77", bar: "#D08A32" },
+  { bg: "#2A2140", fg: "#BFA8E8", bar: "#7C5FD0" },
+];
+
+/* les anciennes tâches n'avaient qu'une heure texte : on les convertit */
+const normaliser = (t) => {
+  if (typeof t.debut === "number") return t;
+  const h = parseInt((t.heure || "").split(":")[0], 10);
+  return { ...t, debut: isNaN(h) ? 8 : h, duree: t.duree || 1 };
+};
+
+function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
+  const [debutSem, setDebutSem] = useState(() => lundiDe(new Date()));
+  const [jour, setJour] = useState(() => iso(new Date()));
+  const [creneau, setCreneau] = useState(null);
+  const [fin, setFin] = useState(9);
+  const [texte, setTexte] = useState("");
+  const [selection, setSelection] = useState(null);
+  const [glisse, setGlisse] = useState(null);
+  const [apercu, setApercu] = useState(null);  // position provisoire, non enregistrée
+  const zone = useRef(null);
+
+  useEffect(() => { if (zone.current) zone.current.scrollTop = 7 * HT; }, []);
+
+  const semaine = [...Array(7)].map((_, i) => {
+    const d = new Date(debutSem); d.setDate(d.getDate() + i); return d;
+  });
+  const aujourdhui = iso(new Date());
+  const duJour = taches.filter((t) => t.date === jour).map(normaliser).sort((a, b) => a.debut - b.debut);
+
+  const ajouter = (type, itemId, libelle) => {
+    onMaj([...taches, {
+      id: Math.random().toString(36).slice(2, 9), date: jour, type,
+      itemId: itemId || null, texte: libelle || "",
+      debut: creneau, duree: Math.max(1, fin - creneau), fait: false, teinte: taches.length % BLOCS.length,
+    }]);
+    setTexte(""); setCreneau(null);
+  };
+  const modifier = (id, patch) => onMaj(taches.map((t) => t.id === id ? { ...normaliser(t), ...patch } : t));
+  const supprimer = (id) => { onMaj(taches.filter((t) => t.id !== id)); setSelection(null); };
+  const reporter = (t) => {
+    const d = new Date(t.date + "T12:00:00"); d.setDate(d.getDate() + 1);
+    const demain = iso(d), dur = t.duree || 1;
+    onMaj(taches.map((x) => {
+      if (x.id === t.id) return { ...normaliser(x), date: demain, debut: 8, fait: false };
+      const n = normaliser(x);
+      if (n.date === demain && n.debut >= 8) return { ...n, debut: Math.min(23, n.debut + dur) };
+      return x;
+    }));
+    setSelection(null);
+  };
+
+  /* étirement et déplacement au doigt ou au stylet */
+  const prendre = (e, t, mode) => {
+    e.stopPropagation();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) {}
+    setSelection(t.id);
+    setGlisse({ id: t.id, mode, y0: e.clientY, debut0: t.debut, duree0: t.duree || 1 });
+    setApercu({ id: t.id, debut: t.debut, duree: t.duree || 1 });
+  };
+  const bouger = (e) => {
+    if (!glisse) return;
+    const pas = Math.round((e.clientY - glisse.y0) / HT);
+    if (glisse.mode === "duree") {
+      const d = Math.min(24 - glisse.debut0, Math.max(1, glisse.duree0 + pas));
+      setApercu((a) => (a && a.duree === d ? a : { id: glisse.id, debut: glisse.debut0, duree: d }));
+    } else {
+      const h = Math.min(24 - glisse.duree0, Math.max(0, glisse.debut0 + pas));
+      setApercu((a) => (a && a.debut === h ? a : { id: glisse.id, debut: h, duree: glisse.duree0 }));
+    }
+  };
+  const lacher = () => {
+    if (apercu) modifier(apercu.id, { debut: apercu.debut, duree: apercu.duree });
+    setApercu(null); setGlisse(null);
+  };
+
+  const trouves = texte.trim()
+    ? items.filter((i) => i.titre.toLowerCase().includes(texte.toLowerCase())
+        || String(i.numero).startsWith(texte.trim())).slice(0, 4)
+    : [];
+
+  const dateLisible = (() => {
+    const d = new Date(jour + "T12:00:00");
+    return `${JOURS[(d.getDay() + 6) % 7]}. ${d.getDate()} ${MOIS[d.getMonth()]}`;
+  })();
+
+  const vue = duJour.map((t) => (apercu && apercu.id === t.id ? { ...t, debut: apercu.debut, duree: apercu.duree } : t))
+    .sort((a, b) => a.debut - b.debut || (b.duree || 1) - (a.duree || 1));
+
+  /* répartition en colonnes : deux blocs qui se chevauchent restent visibles côte à côte */
+  const place = [];
+  let grappe = [], finGrappe = -1;
+  const viderGrappe = () => {
+    if (!grappe.length) return;
+    const cols = [];
+    grappe.forEach((t) => {
+      let c = cols.findIndex((f) => f <= t.debut);
+      if (c === -1) { c = cols.length; cols.push(0); }
+      cols[c] = t.debut + (t.duree || 1);
+      t.col = c;
+    });
+    grappe.forEach((t) => place.push({ ...t, nCols: cols.length }));
+    grappe = [];
+  };
+  vue.forEach((t) => {
+    if (grappe.length && t.debut >= finGrappe) { viderGrappe(); finGrappe = -1; }
+    grappe.push({ ...t });
+    finGrappe = Math.max(finGrappe, t.debut + (t.duree || 1));
+  });
+  viderGrappe();
+
+  const occupe = (h) => duJour.some((t) => h >= t.debut && h < t.debut + (t.duree || 1));
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <button onClick={() => { const d = new Date(debutSem); d.setDate(d.getDate() - 7); setDebutSem(d); }}
+          className="flex items-center justify-center doux"
+          style={{ width: 34, height: 34, borderRadius: 999, border: `1px solid ${T.line}`, color: T.accent }}>‹</button>
+        <span className="flex-1 text-center text-sm" style={{ fontWeight: 600 }}>
+          {MOIS[semaine[3].getMonth()]} {semaine[3].getFullYear()}
+        </span>
+        <button onClick={() => { const d = new Date(debutSem); d.setDate(d.getDate() + 7); setDebutSem(d); }}
+          className="flex items-center justify-center doux"
+          style={{ width: 34, height: 34, borderRadius: 999, border: `1px solid ${T.line}`, color: T.accent }}>›</button>
+        <button onClick={() => { setDebutSem(lundiDe(new Date())); setJour(aujourdhui); }}
+          className="px-3 py-1.5 text-xs doux"
+          style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2 }}>Aujourd'hui</button>
+      </div>
+
+      <div className="flex gap-1.5 mb-4">
+        {semaine.map((d, i) => {
+          const k = iso(d);
+          const n = taches.filter((t) => t.date === k);
+          const faits = n.filter((t) => t.fait).length;
+          const actif = k === jour;
+          return (
+            <button key={k} onClick={() => { setJour(k); setCreneau(null); setSelection(null); }} className="flex-1 doux"
+              style={{ borderRadius: 16, padding: "9px 2px 8px", background: actif ? T.accent : T.card,
+                border: `1px solid ${actif ? T.accent : k === aujourdhui ? T.accent : T.line}` }}>
+              <span className="block text-xs" style={{ color: actif ? "#fff" : T.ink2, opacity: 0.8 }}>{JOURS[i]}</span>
+              <span className="block" style={{ fontSize: 17, fontWeight: 700, color: actif ? "#fff" : T.ink }}>{d.getDate()}</span>
+              <span className="block" style={{ height: 6, marginTop: 3 }}>
+                {n.length > 0 && <i style={{ display: "inline-block", width: 6, height: 6, borderRadius: 999,
+                  background: faits === n.length ? T.haut : actif ? "#fff" : T.accent }} />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-baseline justify-between mb-2 px-1">
+        <span style={{ fontFamily: serif, fontSize: 20 }}>{dateLisible}</span>
+        <span className="text-xs" style={{ color: T.ink2 }}>
+          {duJour.filter((t) => t.fait).length}/{duJour.length} fait
+        </span>
+      </div>
+
+      <div ref={zone} className="ombre" style={{ background: T.card, borderRadius: 22, overflow: "auto", maxHeight: "66vh" }}>
+        <div style={{ position: "relative", height: 24 * HT }}
+          onPointerMove={bouger} onPointerUp={lacher} onPointerCancel={lacher}>
+
+          {[...Array(24)].map((_, h) => (
+            <div key={h} onClick={() => { if (!occupe(h)) { setCreneau(h); setFin(h + 1); setTexte(""); setSelection(null); } }}
+              style={{
+                position: "absolute", top: h * HT, left: 0, right: 0, height: HT,
+                borderTop: `1px solid ${h % 6 === 0 ? "#2E4763" : "#1E3149"}`,
+                cursor: occupe(h) ? "default" : "pointer", display: "flex", alignItems: "flex-start",
+              }}>
+              <span style={{ width: 52, paddingLeft: 14, paddingTop: 4, fontSize: 11, color: "#6E859E", fontWeight: 600 }}>
+                {String(h).padStart(2, "0")}:00
+              </span>
+            </div>
+          ))}
+
+          {place.map((t) => {
+            const i = t.type === "item" ? items.find((x) => x.id === t.itemId) : null;
+            const c = i ? colleges.find((x) => x.id === i.collegeId) : null;
+            const b = BLOCS[(t.teinte ?? 0) % BLOCS.length];
+            const actif = selection === t.id;
+            const enCours = glisse && glisse.id === t.id;
+            return (
+              <div key={t.id}
+                style={{
+                  position: "absolute", top: t.debut * HT + 2,
+                  left: `calc(58px + (100% - 68px) * ${t.col / t.nCols})`,
+                  width: `calc((100% - 68px) / ${t.nCols} - 4px)`,
+                  height: (t.duree || 1) * HT - 4, borderRadius: 14,
+                  background: b.bg, borderLeft: `4px solid ${b.bar}`,
+                  outline: actif ? `2px solid ${b.bar}` : "none",
+                  opacity: t.fait ? 0.45 : 1, overflow: "hidden",
+                  touchAction: "none", zIndex: enCours ? 4 : 2,
+                  boxShadow: enCours ? "0 10px 28px rgba(0,0,0,0.5)" : "none",
+                  transition: enCours ? "none" : "top 140ms ease, height 140ms ease, left 140ms ease, width 140ms ease",
+                }}>
+                <div onPointerDown={(e) => prendre(e, t, "debut")} onClick={() => setSelection(actif ? null : t.id)}
+                  style={{ padding: "7px 10px", height: "100%", cursor: "grab" }}>
+                  <span className="flex items-start gap-2">
+                    <span onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); modifier(t.id, { fait: !t.fait }); }}
+                      className="shrink-0 flex items-center justify-center"
+                      style={{ width: 20, height: 20, borderRadius: 999, marginTop: 1,
+                        border: `2px solid ${t.fait ? b.bar : b.fg}`, background: t.fait ? b.bar : "transparent",
+                        color: "#0E1A29", fontSize: 11, fontWeight: 800 }}>
+                      {t.fait ? "✓" : ""}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block" style={{ fontSize: 13.5, lineHeight: 1.35, color: b.fg, fontWeight: 600,
+                        textDecoration: t.fait ? "line-through" : "none" }}>
+                        {i ? `${i.numero}. ${i.titre}` : t.texte}
+                      </span>
+                      <span className="block text-xs mt-0.5" style={{ color: b.fg, opacity: 0.72 }}>
+                        {t.debut}h – {t.debut + (t.duree || 1)}h{t.nCols === 1 && c ? ` · ${c.nom}` : ""}
+                      </span>
+                    </span>
+                  </span>
+                </div>
+
+                {/* poignée d'étirement */}
+                <div onPointerDown={(e) => prendre(e, t, "duree")}
+                  style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 18,
+                    display: "flex", alignItems: "center", justifyContent: "center", cursor: "ns-resize" }}>
+                  <span style={{ width: 46, height: 4, borderRadius: 999, background: b.bar, opacity: 0.85 }} />
+                </div>
+
+                {actif && (
+                  <div className="flex gap-1" style={{ position: "absolute", top: 5, right: 6 }}>
+                    {i && (
+                      <button onClick={(e) => { e.stopPropagation(); onOuvrirItem(i.id); }}
+                        className="text-xs px-2 py-1" style={{ borderRadius: 999, background: b.bar, color: "#0E1A29", fontWeight: 700 }}>
+                        Ouvrir
+                      </button>
+                    )}
+                    <button onClick={(e) => { e.stopPropagation(); reporter(t); }}
+                      className="text-xs px-2 py-1" style={{ borderRadius: 999, background: "rgba(0,0,0,0.3)", color: b.fg }}>→</button>
+                    <button onClick={(e) => { e.stopPropagation(); supprimer(t.id); }}
+                      className="text-xs px-2 py-1" style={{ borderRadius: 999, background: "rgba(0,0,0,0.3)", color: b.fg }}>×</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* saisie, posée exactement sur le créneau choisi */}
+          {creneau !== null && (
+            <div onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "absolute", top: creneau * HT + 2, left: 58, right: 10, zIndex: 5,
+                background: T.paper, borderRadius: 16, border: `2px solid ${T.accent}`, padding: "10px 12px",
+                boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+              }}>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs shrink-0" style={{ color: T.accent, fontWeight: 700 }}>
+                  {String(creneau).padStart(2, "0")}:00
+                </span>
+                <span className="text-xs shrink-0" style={{ color: T.ink2 }}>→</span>
+                <select value={fin} onChange={(e) => setFin(Number(e.target.value))}
+                  className="text-xs px-2 py-1 shrink-0"
+                  style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.accent, fontWeight: 700 }}>
+                  {[...Array(24 - creneau)].map((_, k) => (
+                    <option key={k} value={creneau + k + 1}>{String(creneau + k + 1).padStart(2, "0")}:00</option>
+                  ))}
+                </select>
+                <div className="flex-1" />
+                <button onClick={() => { setCreneau(null); setTexte(""); }} className="px-1 text-sm" style={{ color: T.ink2 }}>×</button>
+              </div>
+
+              <input autoFocus value={texte} onChange={(e) => setTexte(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && texte.trim()) ajouter("perso", null, texte.trim());
+                  if (e.key === "Escape") { setCreneau(null); setTexte(""); }
+                }}
+                placeholder="Numéro d'item, mot-clé, ou autre chose…"
+                className="w-full px-3 py-2 text-sm" style={{ borderRadius: 12, border: `1px solid ${T.line}` }} />
+
+              {trouves.map((i) => {
+                const c = colleges.find((x) => x.id === i.collegeId);
+                const p = pal(c ? c.nom : "");
+                return (
+                  <button key={i.id} onClick={() => ajouter("item", i.id)}
+                    className="w-full text-left flex items-center gap-2 doux mt-1"
+                    style={{ background: T.card, borderRadius: 10, padding: "7px 9px" }}>
+                    <span className="shrink-0 flex items-center justify-center"
+                      style={{ width: 26, height: 26, borderRadius: 999, background: p.bg, color: p.fg, fontSize: 10, fontWeight: 700 }}>
+                      {i.numero}
+                    </span>
+                    <span className="flex-1 min-w-0 text-xs truncate">{i.titre}</span>
+                  </button>
+                );
+              })}
+              {texte.trim() && (
+                <button onClick={() => ajouter("perso", null, texte.trim())} className="text-xs mt-2 px-3 py-1.5 doux"
+                  style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 600 }}>
+                  Ajouter tel quel
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="text-xs mt-4" style={{ color: T.ink2, lineHeight: 1.7 }}>
+        Appuie sur un créneau libre pour le remplir, en choisissant l'heure de fin.
+        Tire la petite barre en bas d'un bloc pour l'allonger ou le raccourcir, glisse le bloc pour le déplacer.
+      </p>
+    </div>
+  );
+}
+
+/* ================== citation du jour ================== */
+const CITATIONS = [
+  "Un item par jour vaut mieux que dix items un dimanche de panique.",
+  "Ce n'est pas la difficulté du programme qui use, c'est de le recommencer sans jamais le finir.",
+  "Tu n'as pas besoin d'être motivé aujourd'hui. Tu as besoin d'ouvrir le collège.",
+  "La régularité bat l'intensité, tous les jours de la semaine.",
+  "Une fiche relue trois fois vaut mieux que trois fiches lues une fois.",
+  "Ce que tu apprends ce matin, un patient en profitera dans cinq ans.",
+  "Le jour où tu n'as envie de rien, fais le minimum. Mais fais-le.",
+  "Un QCM raté aujourd'hui est un point gagné le jour J.",
+  "Personne ne retient tout. Ceux qui réussissent oublient puis relisent.",
+  "Ta seule concurrence, c'est la version de toi qui a arrêté hier.",
+  "Deux heures concentrées valent une journée dispersée.",
+  "L'externat est long. C'est justement pour ça qu'il récompense la constance.",
+  "Tu ne rates pas un item, tu apprends où tu es fragile.",
+  "Commence par le chapitre qui te fait peur. Le reste deviendra facile.",
+  "Réviser sans se tester, c'est relire un plan sans jamais prendre la route.",
+  "Ce n'est pas grave d'être lent. C'est grave de ne pas commencer.",
+  "Les jours ordinaires font les résultats extraordinaires.",
+  "Un cerveau fatigué n'apprend rien. Dormir fait partie du travail.",
+  "Tu n'as pas à tout savoir aujourd'hui. Seulement un peu plus qu'hier.",
+  "Le programme ne rétrécit pas si tu l'évites.",
+  "La médecine se gagne en années, pas en nuits blanches.",
+  "Chaque case verte de ta grille est un jour où tu ne t'es pas menti.",
+  "Le doute est normal. L'abandon est un choix.",
+  "Fais aujourd'hui ce que ton toi de mai te remerciera d'avoir fait.",
+  "La mémoire aime la répétition espacée, pas l'héroïsme du dernier moment.",
+  "Un item mal compris reviendra. Autant l'affronter maintenant.",
+  "Tu ne cours pas contre les autres, tu cours contre le temps.",
+  "L'important n'est pas d'avoir tout vu, c'est de savoir ce que tu n'as pas vu.",
+  "Sois exigeant sur la méthode, indulgent avec toi-même.",
+  "Le meilleur moment pour réviser cet item, c'était il y a un mois. Le deuxième, c'est maintenant.",
+  "Écrire avec ses mots, c'est apprendre. Surligner, c'est décorer.",
+  "On ne progresse pas en confort. On progresse là où ça résiste.",
+  "Un jour de repos assumé vaut mieux que trois jours de culpabilité.",
+  "La panique dit que tout est urgent. Le planning dit ce qui l'est vraiment.",
+  "Ce que tu construis là ne s'évaluera pas seulement à un classement.",
+  "Le stress ne disparaît pas quand on est prêt, il diminue quand on avance.",
+  "Une heure de QCM apprend plus que trois heures de lecture passive.",
+  "Le programme est fini, ton temps ne l'est pas encore. Répartis-le.",
+  "Tu as le droit d'être moyen sur un item. Pas de faire semblant de le savoir.",
+  "Ta grille ne juge pas. Elle informe.",
+  "Le talent explique le début, la discipline explique la fin.",
+  "Un chapitre commencé est déjà à moitié apprivoisé.",
+  "Ne compare pas ton chapitre trois au chapitre vingt de quelqu'un d'autre.",
+  "La fatigue ment souvent. Essaie vingt minutes avant de la croire.",
+  "Chaque erreur notée aujourd'hui est une erreur évitée à l'épreuve.",
+  "Ce n'est pas d'être parfait qu'on te demande. C'est d'être fiable.",
+  "Le savoir médical se dépose lentement, comme les couches d'un sol.",
+  "Tu ne perds pas de temps à revenir en arrière. Tu consolides.",
+  "Un plan simple suivi vaut mieux qu'un plan parfait abandonné.",
+  "Le futur médecin que tu seras se fabrique dans ces après-midis ordinaires.",
+  "Beaucoup abandonnent au moment précis où ça allait devenir facile.",
+  "Réviser le matin, c'est acheter de la sérénité pour le soir.",
+  "Les gros items ne se mangent pas d'un coup. Coupe-les.",
+  "Tu n'es pas en retard. Tu es simplement à ton endroit du chemin.",
+  "Le calme du jour J se prépare des mois avant, dans la méthode.",
+  "Ce que tu comprends, tu ne l'oublieras qu'à moitié. Ce que tu récites, tu l'oublieras entier.",
+  "Un bon externe n'est pas celui qui sait tout, c'est celui qui sait chercher vite.",
+  "Avance même mal. Corriger une trajectoire est plus simple que démarrer.",
+  "L'objectif de la journée n'est pas de finir le programme. C'est de tenir demain.",
+  "Tu as choisi un métier long. Sa lenteur est aussi sa noblesse.",
+];
+
+function citationDuJour() {
+  const d = new Date();
+  const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000) + d.getFullYear();
+  return CITATIONS[n % CITATIONS.length];
+}
+
+const CLE_EDN = "edngo-date-edn";
+
+function Compteur() {
+  const [date, setDate] = useState("2028-10-02");
+  const [edition, setEdition] = useState(false);
+  useEffect(() => { try { const v = localStorage.getItem(CLE_EDN); if (v) setDate(v); } catch (e) {} }, []);
+  const enregistrer = (v) => { setDate(v); try { localStorage.setItem(CLE_EDN, v); } catch (e) {} };
+
+  const jours = Math.max(0, Math.ceil((new Date(date + "T08:00:00") - new Date()) / 86400000));
+  const mois = Math.floor(jours / 30.44);
+
+  return (
+    <div className="ombre" style={{ background: T.card, borderRadius: 24, padding: "18px 20px", height: "100%" }}>
+      <p className="text-xs uppercase mb-1" style={{ letterSpacing: "0.12em", color: T.ink2 }}>Jusqu'aux EDN</p>
+      <p style={{ fontFamily: serif, fontSize: 40, lineHeight: 1.05, color: T.accent }}>{jours}</p>
+      <p className="text-xs" style={{ color: T.ink2 }}>
+        jours · environ {mois} mois · {(jours / 7).toFixed(0)} semaines
+      </p>
+      {edition ? (
+        <div className="mt-3 flex gap-2 items-center">
+          <input type="date" value={date} onChange={(e) => enregistrer(e.target.value)}
+            className="px-2 py-1 text-xs" style={{ borderRadius: 10, border: `1px solid ${T.line}` }} />
+          <button onClick={() => setEdition(false)} className="text-xs" style={{ color: T.accent }}>ok</button>
+        </div>
+      ) : (
+        <button onClick={() => setEdition(true)} className="text-xs mt-3" style={{ color: T.ink2, textDecoration: "underline" }}>
+          {new Date(date + "T08:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Citation() {
+  return (
+    <div className="ombre" style={{ background: T.accentPale, borderRadius: 24, padding: "18px 20px", height: "100%" }}>
+      <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.12em", color: T.accent }}>Aujourd'hui</p>
+      <p style={{ fontFamily: lecture, fontSize: 17, lineHeight: 1.6, color: "#D6E4F1" }}>
+        {citationDuJour()}
+      </p>
+    </div>
+  );
+}
+
+/* la journée, telle qu'elle apparaît sur l'accueil */
+function JourneeAccueil({ taches, onMaj, items, colleges, onOuvrirItem, onPlanning }) {
+  const auj = iso(new Date());
+  const duJour = taches.filter((t) => t.date === auj).map(normaliser).sort((a, b) => a.debut - b.debut);
+  const faits = duJour.filter((t) => t.fait).length;
+
+  return (
+    <div className="ombre mb-4" style={{ background: T.card, borderRadius: 24, padding: "18px 20px" }}>
+      <div className="flex items-baseline justify-between mb-3">
+        <span style={{ fontFamily: serif, fontSize: 19 }}>Aujourd'hui</span>
+        <span className="text-xs" style={{ color: T.ink2 }}>
+          {duJour.length ? `${faits}/${duJour.length} fait` : "rien de prévu"}
+        </span>
+      </div>
+
+      {duJour.length === 0 ? (
+        <button onClick={onPlanning} className="w-full text-left doux"
+          style={{ background: T.accentPale, borderRadius: 16, padding: "16px 18px", color: T.accent, fontWeight: 600 }}>
+          Planifier ma journée →
+        </button>
+      ) : (
+        <>
+          {duJour.map((t) => {
+            const i = t.type === "item" ? items.find((x) => x.id === t.itemId) : null;
+            const b = BLOCS[(t.teinte ?? 0) % BLOCS.length];
+            return (
+              <div key={t.id} className="flex items-center gap-3 mb-2 doux"
+                style={{ background: b.bg, borderLeft: `4px solid ${b.bar}`, borderRadius: 14,
+                  padding: "11px 13px", opacity: t.fait ? 0.45 : 1 }}>
+                <button onClick={() => onMaj(taches.map((x) => x.id === t.id ? { ...normaliser(x), fait: !x.fait } : x))}
+                  className="shrink-0 flex items-center justify-center"
+                  style={{ width: 22, height: 22, borderRadius: 999,
+                    border: `2px solid ${t.fait ? b.bar : b.fg}`, background: t.fait ? b.bar : "transparent",
+                    color: "#0E1A29", fontSize: 12, fontWeight: 800 }}>
+                  {t.fait ? "✓" : ""}
+                </button>
+                <span className="shrink-0 text-xs" style={{ color: b.fg, fontWeight: 700, width: 62 }}>
+                  {String(t.debut).padStart(2, "0")}–{String(t.debut + (t.duree || 1)).padStart(2, "0")}h
+                </span>
+                <button onClick={() => i && onOuvrirItem(i.id)} className="flex-1 text-left min-w-0">
+                  <span className="block text-sm" style={{ color: b.fg, fontWeight: 600, lineHeight: 1.35,
+                    textDecoration: t.fait ? "line-through" : "none" }}>
+                    {i ? `${i.numero}. ${i.titre}` : t.texte}
+                  </span>
+                </button>
+              </div>
+            );
+          })}
+          <button onClick={onPlanning} className="text-xs mt-2" style={{ color: T.accent, fontWeight: 600 }}>
+            Modifier la journée →
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ================== Exercice ================== */
 function Exercice({ items, colleges, cartes, qcms, resultats, onLancer }) {
   const [mode, setMode] = useState("faibles");
@@ -1696,6 +2199,7 @@ function App() {
   const [erreurs, setErreurs] = useState([]);
   const [cours, setCours] = useState(COURS_INIT);
   const [fiches, setFiches] = useState([]);
+  const [taches, setTaches] = useState([]);
   const [pret, setPret] = useState(false);
   const [alerte, setAlerte] = useState(null);
 
@@ -1717,6 +2221,7 @@ function App() {
         setErreurs(d.erreurs || []);
         if (d.cours?.length) setCours(d.cours);
         setFiches(d.fiches || []);
+        setTaches(d.taches || []);
       } catch {
         try { /* reprise de l'ancienne version */
           const v = JSON.parse((await window.storage.get(KEY_ANCIEN)).value);
@@ -1761,12 +2266,12 @@ function App() {
     if (premier.current) { premier.current = false; return; }
     const t = setTimeout(async () => {
       try {
-        await window.storage.set(KEY, JSON.stringify({ colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches }));
+        await window.storage.set(KEY, JSON.stringify({ colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches }));
         setAlerte(null);
       } catch { setAlerte("Sauvegarde impossible. Exporte tes données."); }
     }, 500);
     return () => clearTimeout(t);
-  }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, pret]);
+  }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, pret]);
 
   const noter = (itemId, valeur, type) =>
     setResultats((l) => [...l, { id: uid(), itemId, valeur, type, date: auj(), t: Date.now() }]);
@@ -1830,9 +2335,9 @@ function App() {
   };
 
   const exporter = () => {
-    const b = new Blob([JSON.stringify({ colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches }, null, 2)], { type: "application/json" });
+    const b = new Blob([JSON.stringify({ colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches }, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(b); a.download = `edn-go-${auj()}.json`; a.click();
+    a.href = URL.createObjectURL(b); a.download = `edn-go-${VERSION}-${auj()}.json`; a.click();
     URL.revokeObjectURL(a.href);
   };
   const importer = (e) => {
@@ -1841,6 +2346,20 @@ function App() {
     r.onload = () => {
       try {
         const d = JSON.parse(r.result);
+        /* sauvegarde complète : elle contient des items ou des collèges */
+        if (!Array.isArray(d) && (Array.isArray(d.items) || Array.isArray(d.colleges))) {
+          if (d.colleges?.length) setColleges(d.colleges);
+          if (d.items?.length) setItems(d.items);
+          setCartes(d.cartes || []); setQcms(d.qcms || []);
+          setAnnales(d.annales || []); setResultats(d.resultats || []);
+          setErreurs(d.erreurs || []);
+          if (d.cours?.length) setCours(d.cours);
+          if (d.fiches) setFiches(d.fiches);
+          if (d.taches) setTaches(d.taches);
+          setAlerte(`Sauvegarde restaurée : ${(d.items || []).length} items, ${(d.qcms || []).length} QCM, `
+            + `${(d.cartes || []).length} flashcards, ${(d.fiches || []).length} fiche(s). Les PDF ne sont pas dans l'export.`);
+          return;
+        }
         const lot = Array.isArray(d) ? { resumes: d } : (d.resumes || d.flashcards || d.qcms) ? d : null;
         if (lot) {
           const parNum = {};
@@ -1889,13 +2408,7 @@ function App() {
           setAlerte(msg);
           return;
         }
-        if (d.colleges) setColleges(d.colleges);
-        if (d.items) setItems(d.items);
-        setCartes(d.cartes || []); setQcms(d.qcms || []);
-        setAnnales(d.annales || []); setResultats(d.resultats || []);
-        setErreurs(d.erreurs || []);
-        if (d.cours?.length) setCours(d.cours);
-        if (d.fiches) setFiches(d.fiches);
+        setAlerte("Fichier non reconnu : ni sauvegarde, ni lot de contenu.");
       } catch { setAlerte("Fichier illisible."); }
     };
     r.readAsText(f); e.target.value = "";
@@ -1939,6 +2452,7 @@ function App() {
         ) : (
           <span style={{ fontFamily: serif, fontSize: 19, fontWeight: 700, letterSpacing: "-0.01em" }}>
             EDN <span style={{ color: T.accent }}>Go</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: T.ink2, marginLeft: 7 }}>{VERSION}</span>
           </span>
         )}
         <div className="flex-1" />
@@ -1949,7 +2463,7 @@ function App() {
 
       {!session && (
         <nav className="flex gap-1.5 px-3 pb-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-          {[["accueil", "Accueil"], ["exercice", "Exercice"], ["grille", "Grille"], ["colleges", "Collèges"],
+          {[["accueil", "Accueil"], ["todo", "À faire"], ["exercice", "Exercice"], ["grille", "Grille"], ["colleges", "Collèges"],
             ["cours", "Cours"], ["cards", "My Cards"], ["ai", "My AI"], ["resultats", "Résultats"],
             ["erreurs", "Erreurs"]].map(([v, l]) => {
             const on = vue === v && !college && !item;
@@ -2011,6 +2525,9 @@ function App() {
           <VueColleges colleges={colleges} items={items} scores={scores} onOuvrir={setCollegeId} />
         ) : vue === "cours" ? (
           <Cours cours={cours} onMaj={setCours} />
+        ) : vue === "todo" ? (
+          <Planning taches={taches} onMaj={setTaches} items={items} colleges={colleges}
+            onOuvrirItem={(id) => { const it = items.find((x) => x.id === id); setVue("colleges"); setCollegeId(it.collegeId); setItemId(id); }} />
         ) : vue === "exercice" ? (
           <Exercice items={items} colleges={colleges} cartes={cartes} qcms={qcms} resultats={resultats}
             onLancer={(p) => p.length ? setSession(p) : setAlerte("Aucun exercice ne correspond à ce choix.")} />
@@ -2028,6 +2545,8 @@ function App() {
             onOuvrir={(id) => { const it = items.find((x) => x.id === id); setCollegeId(it.collegeId); setItemId(id); }} />
         ) : (
           <Accueil items={items} colleges={colleges} cartes={cartes} qcms={qcms}
+            taches={taches} onTaches={setTaches} onPlanning={() => setVue("todo")}
+            onOuvrirItem={(id) => { const it = items.find((x) => x.id === id); setVue("colleges"); setCollegeId(it.collegeId); setItemId(id); }}
             testes={testes} solides={solides} jours={resultats7}
             nbExos={cartes.length + qcms.length} nbAnnales={annales.length}
             onSession={lancerSessionFaible} onSessionCollege={lancerSessionCollege}
@@ -2040,7 +2559,8 @@ function App() {
 }
 
 /* ================== accueil ================== */
-function Accueil({ items, colleges, cartes, qcms, testes, solides, jours, nbExos, nbAnnales, onSession, onSessionCollege, onGrille, onExporter, onImporter }) {
+function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, onOuvrirItem,
+  testes, solides, jours, nbExos, nbAnnales, onSession, onSessionCollege, onGrille, onExporter, onImporter }) {
   const [details, setDetails] = useState(false);
   const n = items.length || 1;
   const cnt = [0, 1, 2, 3].map((v) => items.filter((i) => (i.niveau || 0) === v).length);
@@ -2057,6 +2577,14 @@ function Accueil({ items, colleges, cartes, qcms, testes, solides, jours, nbExos
 
   return (
     <div>
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <div className="flex-1"><Citation /></div>
+        <div className="sm:w-56 shrink-0"><Compteur /></div>
+      </div>
+
+      <JourneeAccueil taches={taches} onMaj={onTaches} items={items} colleges={colleges}
+        onOuvrirItem={onOuvrirItem} onPlanning={onPlanning} />
+
       {/* barre de progression, unique et reactive */}
       <div className="p-5 mb-4 ombre" style={{ background: T.card, borderRadius: 24 }}>
         <div className="flex items-end justify-between mb-3">
