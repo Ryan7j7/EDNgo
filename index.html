@@ -13,7 +13,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<script crossorigin src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 <style>
   html, body, #root { height: 100%; }
   body { margin: 0; background: #0E1A29; color: #E2ECF6; -webkit-font-smoothing: antialiased;
@@ -44,7 +44,7 @@ window.addEventListener("error", function (e) {
   }
 });
 </script>
-<script type="text/babel" data-presets="react">
+<script type="text/plain" id="source-jsx">
 const { useState, useEffect, useRef, useMemo } = React;
 
 /* ================== tokens ================== */
@@ -187,7 +187,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v36";
+const VERSION = "v37";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1374,8 +1374,6 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
   const [modeles, setModeles] = useState(false);
   const [purge, setPurge] = useState(false);
   const [corbeille, setCorbeille] = useState([]);
-  const [effacer_, setEffacer] = useState(false);
-  const [corbeille, setCorbeille] = useState(null);
   const [glisse, setGlisse] = useState(null);
   const [apercu, setApercu] = useState(null);  // position provisoire, non enregistrée
   const zone = useRef(null);
@@ -5098,6 +5096,48 @@ function Session({ paquet, onNoter, onFin, items }) {
 const conteneur = document.getElementById("root");
 conteneur.dataset.ok = "1";
 ReactDOM.createRoot(conteneur).render(<Garde><App /></Garde>);
+</script>
+
+<script>
+(function () {
+  function montrer(titre, detail, ligne) {
+    var r = document.getElementById("root");
+    if (!r) return;
+    r.innerHTML = '<div id="ecran"><div style="max-width:640px;text-align:left">'
+      + '<p style="color:#E4685D"><b>' + titre + '</b></p>'
+      + '<p style="font-size:13px;margin-top:10px;white-space:pre-wrap">' + String(detail).replace(/</g, "&lt;") + '</p>'
+      + (ligne ? '<p style="font-size:12px;margin-top:10px;color:#8CA3BB">Ligne ' + ligne + ' du script.</p>' : '')
+      + '</div></div>';
+  }
+
+  function demarrer() {
+    var src = document.getElementById("source-jsx").textContent;
+    var code;
+    try {
+      code = Babel.transform(src, { presets: ["react"] }).code;
+    } catch (e) {
+      return montrer("Erreur de syntaxe dans le code.", e.message, e.loc ? e.loc.line : null);
+    }
+    try {
+      (0, eval)(code);
+    } catch (e) {
+      return montrer("EDN Go n'a pas pu demarrer.", (e && e.stack) || e, null);
+    }
+  }
+
+  /* Babel, React et Tailwind viennent d'internet : on attend qu'ils soient la */
+  var essais = 0;
+  (function attendre() {
+    if (window.Babel && window.React && window.ReactDOM) return demarrer();
+    if (++essais > 150) {
+      return montrer("Les composants de la page n'ont pas pu etre telecharges.",
+        "Verifie ta connexion internet, puis recharge la page.\n\n"
+        + "Manquant : " + [!window.React && "React", !window.ReactDOM && "ReactDOM", !window.Babel && "Babel"]
+          .filter(Boolean).join(", "));
+    }
+    setTimeout(attendre, 100);
+  })();
+})();
 </script>
 </body>
 </html>
