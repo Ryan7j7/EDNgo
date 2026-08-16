@@ -34,8 +34,13 @@ window.storage = {
 window.addEventListener("error", function (e) {
   var r = document.getElementById("root");
   if (r && !r.dataset.ok) {
-    r.innerHTML = '<div id="ecran"><div><p style="color:#E4685D"><b>EDN Go n\'a pas pu demarrer.</b></p><p>'
-      + (e.message || e) + '</p><p style="font-size:12px">La page a besoin d\'internet au premier chargement.</p></div></div>';
+    var d = e.message || String(e);
+    if (e.error && e.error.message) d = e.error.message;
+    if (e.filename) d += " (" + e.filename.split("/").pop() + " ligne " + e.lineno + ")";
+    r.innerHTML = '<div id="ecran"><div style="max-width:520px"><p style="color:#E4685D"><b>EDN Go n\'a pas pu demarrer.</b></p>'
+      + '<p style="font-size:13px">' + d + '</p>'
+      + '<p style="font-size:12px;margin-top:14px">Si le message dit seulement « Script error », ouvre la page depuis '
+      + 'ed-ngo.vercel.app plutot qu\'en double-cliquant le fichier : Safari masque les erreurs des fichiers locaux.</p></div></div>';
   }
 });
 </script>
@@ -182,7 +187,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v34";
+const VERSION = "v36";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -794,12 +799,22 @@ function Documents({ docs = [], onMaj }) {
   );
 }
 
+const clair = (c) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  return (r * 299 + g * 587 + b * 114) / 1000 > 140;
+};
+
 function Toile({ traces, onTraces }) {
   const [couleur, setCouleur] = useState(COULEURS_STYLO[0]);
+  useEffect(() => {
+    setCouleur((c) => (c === "#E2ECF6" || c === "#16202B") ? (clair(fond) ? "#16202B" : "#E2ECF6") : c);
+  }, [fond]);
   const [taille, setTaille] = useState(3);
   const [gomme, setGomme] = useState(false);
   const [plein, setPlein] = useState(false);
   const [zoomPct, setZoomPct] = useState(100);
+  const [fond, setFond] = useState("#12243A");
+  const [trame, setTrame] = useState("vierge");
 
   const svg = useRef(null);
   const encours = useRef(null);      // élément <path> du trait en cours
@@ -1002,6 +1017,18 @@ function Toile({ traces, onTraces }) {
       </div>
       <button onClick={cadrer} className="px-3 py-1.5 text-xs doux"
         style={{ borderRadius: 999, color: T.ink2, border: `1px solid ${T.line}` }}>Recadrer</button>
+      <span className="flex items-center gap-1.5">
+        {[["#12243A", "nuit"], ["#0E1A29", "sombre"], ["#F7F3E8", "papier"], ["#FFFFFF", "blanc"]].map(([c, l]) => (
+          <button key={c} onClick={() => setFond(c)} title={l} className="doux"
+            style={{ width: 22, height: 22, borderRadius: 999, background: c,
+              border: fond === c ? `3px solid ${T.accent}` : `1px solid ${T.line}` }} />
+        ))}
+        <button onClick={() => setTrame(trame === "vierge" ? "quadrille" : trame === "quadrille" ? "ligne" : "vierge")}
+          className="px-3 py-1.5 text-xs doux"
+          style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2, fontWeight: 600 }}>
+          {trame === "vierge" ? "Vierge" : trame === "quadrille" ? "Quadrillé" : "Lignes"}
+        </button>
+      </span>
       <button onClick={() => setPlein(!plein)} className="px-3 py-1.5 text-xs doux"
         style={{ borderRadius: 999, fontWeight: 600, background: T.accent, color: "#fff" }}>
         {plein ? "Réduire" : "Plein écran"}
@@ -1012,16 +1039,18 @@ function Toile({ traces, onTraces }) {
   const dessin = (
     <svg ref={svg} viewBox="0 0 1000 700" width="100%"
       style={{
-        background: "#12243A", borderRadius: plein ? 12 : 18, border: plein ? "none" : `1px solid ${T.line}`,
+        background: fond, borderRadius: plein ? 12 : 18, border: plein ? "none" : `1px solid ${T.line}`,
         touchAction: "none", WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none",
         display: "block", height: plein ? "calc(100vh - 76px)" : "auto", aspectRatio: plein ? "auto" : "10 / 7",
       }}>
       <defs>
         <pattern id="quadrillage" width="40" height="40" patternUnits="userSpaceOnUse">
-          <path d="M40 0 L0 0 0 40" fill="none" stroke="#1E3149" strokeWidth="1" />
+          <path d={trame === "ligne" ? "M0 40 L40 40" : "M40 0 L0 0 0 40"} fill="none"
+            stroke={clair(fond) ? "#DCE2EA" : "#1E3149"} strokeWidth="1" />
         </pattern>
       </defs>
-      <rect id="fond" x="-1000" y="-700" width="3000" height="2100" fill="url(#quadrillage)" />
+      <rect id="fond" x="-1000" y="-700" width="3000" height="2100"
+        fill={trame === "vierge" ? "none" : "url(#quadrillage)"} />
       {traces.filter((t) => t && t.pts).map((t, i) => (
         <path key={i} d={chemin(t.pts)} fill="none" stroke={t.couleur} strokeWidth={t.taille}
           strokeLinecap="round" strokeLinejoin="round" />
@@ -1343,6 +1372,8 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
   const [selection, setSelection] = useState(null);
   const [export_, setExport_] = useState(false);
   const [modeles, setModeles] = useState(false);
+  const [purge, setPurge] = useState(false);
+  const [corbeille, setCorbeille] = useState([]);
   const [effacer_, setEffacer] = useState(false);
   const [corbeille, setCorbeille] = useState(null);
   const [glisse, setGlisse] = useState(null);
@@ -1408,8 +1439,8 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
     const occupees = duJour.map((t) => [t.debut, t.debut + (t.duree || 1)]);
     const libre = (a, b) => !occupees.some(([x, y]) => a < y && b > x);
     const candidats = items
-      .filter((i) => (i.niveau || 0) < 3)
-      .map((i) => ({ i, d: dernierTour(i) || "0000-00-00", n: i.niveau || 0 }))
+      .filter((i) => (i.comp || 0) < 4)
+      .map((i) => ({ i, d: i.dateComp || "0000-00-00", n: i.comp || 0 }))
       .sort((a, b) => a.n - b.n || a.d.localeCompare(b.d));
     let k = 0;
     const nouvelles = [];
@@ -1588,6 +1619,45 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
         </div>
       )}
 
+      {purge && (
+        <div className="ombre mb-3 vue" style={{ background: T.card, borderRadius: 20, padding: "14px 16px", border: `1px solid ${T.bas}` }}>
+          <p className="text-xs mb-3" style={{ color: T.ink2, lineHeight: 1.7 }}>
+            Efface des créneaux du planning. Un bouton de rétablissement apparaît juste après.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {[["Cette journée", (t) => t.date === jour],
+              ["Cette semaine", (t) => t.date >= iso(debutSem) && t.date <= iso(new Date(debutSem.getTime() + 6 * 86400000))],
+              ["Tout le passé", (t) => t.date < auj()],
+              ["Tout", () => true]].map(([l, f]) => {
+              const lot = taches.filter(f);
+              return (
+                <button key={l} disabled={!lot.length}
+                  onClick={() => { setCorbeille(lot); onMaj(taches.filter((t) => !lot.includes(t))); setPurge(false); }}
+                  className="px-4 py-2.5 text-xs doux"
+                  style={{ borderRadius: 999, fontWeight: 600,
+                    background: lot.length ? NIV[1].doux : "transparent",
+                    color: lot.length ? NIV[1].encre : "#3E5C7C",
+                    border: `1px solid ${lot.length ? "transparent" : T.line}` }}>
+                  {l} <span style={{ opacity: 0.75 }}>{lot.length}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {corbeille.length > 0 && (
+        <div className="flex items-center gap-3 mb-3 px-4 py-2.5 vue" style={{ background: T.accent, borderRadius: 14 }}>
+          <span className="text-xs flex-1" style={{ color: "#fff", fontWeight: 600 }}>
+            {corbeille.length} créneau(x) effacé(s)
+          </span>
+          <button onClick={() => { onMaj([...taches, ...corbeille]); setCorbeille([]); }}
+            className="text-xs px-3 py-1 doux"
+            style={{ background: "rgba(255,255,255,0.24)", color: "#fff", borderRadius: 999, fontWeight: 700 }}>Rétablir</button>
+          <button onClick={() => setCorbeille([])} className="text-xs" style={{ color: "#fff" }}>✕</button>
+        </div>
+      )}
+
       {modeles && (
         <div className="ombre mb-3 vue" style={{ background: T.card, borderRadius: 20, padding: "14px 16px" }}>
           <p className="text-xs mb-3" style={{ color: T.ink2, lineHeight: 1.7 }}>
@@ -1665,7 +1735,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
           onPointerMove={bouger} onPointerUp={lacher} onPointerCancel={lacher}>
 
           {[...Array(25)].map((_, h) => (
-            <div key={h} onClick={() => { if (h < 24 && !occupe(h)) { setCreneau(h); setFin(h + 1); setTexte(""); setSelection(null); } }}
+            <div key={h} onClick={() => { setSelection(null); if (h < 24 && !occupe(h)) { setCreneau(h); setFin(h + 1); setTexte(""); } }}
               style={{
                 position: "absolute", top: h * HT, left: 0, right: 0, height: h < 24 ? HT : 1,
                 borderTop: `1px solid ${h % 6 === 0 ? "#3A5573" : "#1E3149"}`,
@@ -1701,7 +1771,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
                   boxShadow: enCours ? "0 10px 28px rgba(0,0,0,0.5)" : "none",
                   transition: enCours ? "none" : "top 140ms ease, height 140ms ease, left 140ms ease, width 140ms ease",
                 }}>
-                <div onPointerDown={(e) => prendre(e, t, "debut")} onClick={() => setSelection(actif ? null : t.id)}
+                <div onPointerDown={(e) => { setSelection(t.id); prendre(e, t, "debut"); }}
                   style={{ padding: "7px 10px", height: "100%", cursor: "grab" }}>
                   <span className="flex items-start gap-2">
                     <span onPointerDown={(e) => e.stopPropagation()}
@@ -1809,9 +1879,9 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
 
       <button onClick={() => {
         const faibles = items
-          .map((i) => ({ i, dernier: (i.tours || []).length, niv: i.niveau || 0 }))
-          .filter((x) => x.niv < 3)
-          .sort((a, b) => a.niv - b.niv || a.dernier - b.dernier)
+          .map((i) => ({ i, dernier: i.dateComp || "0000-00-00", niv: i.comp || 0 }))
+          .filter((x) => x.niv < 4)
+          .sort((a, b) => a.niv - b.niv || String(a.dernier).localeCompare(String(b.dernier)))
           .slice(0, 10);
         if (!faibles.length) return;
         const base = new Date(jour + "T12:00:00");
@@ -1828,6 +1898,11 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
       }} className="w-full py-3 mt-4 doux"
         style={{ background: T.accentPale, color: T.accent, borderRadius: 999, fontWeight: 600, fontSize: 13 }}>
         Remplir les 5 prochains jours avec mes items les plus faibles
+      </button>
+
+      <button onClick={() => setPurge(!purge)} className="w-full py-3 mt-2 doux"
+        style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.bas, fontWeight: 600, fontSize: 13 }}>
+        Effacer des créneaux…
       </button>
 
       <p className="text-xs mt-4" style={{ color: T.ink2, lineHeight: 1.7 }}>
@@ -2945,6 +3020,10 @@ function App() {
   const noter = (itemId, valeur, type, exoId) =>
     setResultats((l) => [...l, { id: uid(), itemId, valeur, type, exoId: exoId || null, date: auj(), t: Date.now() }]);
 
+  const definirComp = (id, v, date) =>
+    setItems((l) => l.map((i) => i.id === id
+      ? { ...i, comp: v, dateComp: v === 0 ? null : (date !== undefined ? date : auj()) } : i));
+
   const definirNiveau = (id, v) =>
     v === -1
       ? setItems((l) => l.map((i) => i.id === id ? { ...i, tours: (i.tours || []).slice(0, -1) } : i))
@@ -2957,7 +3036,7 @@ function App() {
     nouvelles.forEach((t) => {
       if (t.type === "item" && t.itemId && t.fait && avant[t.id] === false) {
         setItems((l) => l.map((i) => i.id === t.itemId
-          ? { ...i, tours: [...(i.tours || []), auj()] } : i));
+          ? { ...i, tours: [...(i.tours || []), auj()], dateComp: auj(), comp: i.comp || 3 } : i));
       }
     });
     setTaches(nouvelles);
@@ -3136,9 +3215,7 @@ function App() {
 
   return (
     <div className="min-h-screen w-full doux" style={{
-      background: college ? melange(pal(college.nom).fg, "#0E1A29", 0.10) : teinteOnglet(vue).fond,
-      color: T.ink,
-      "--acc": college ? pal(college.nom).fg : teinteOnglet(vue).acc,
+      background: T.paper, color: T.ink, "--acc": T.accent,
     }}>
       <style>{`
         *:focus-visible { outline: 2px solid ${T.accent}; outline-offset: 2px; }
@@ -3168,25 +3245,24 @@ function App() {
       `}</style>
 
       <header className="sticky top-0 z-30 doux" style={{
-        background: college ? melange(pal(college.nom).fg, "#0E1A29", 0.10) : teinteOnglet(vue).fond,
-        borderBottom: `1px solid ${T.line}` }}>
+        background: T.paper, borderBottom: `1px solid ${T.line}` }}>
       <div className="px-4 pt-3 pb-2 flex items-center gap-3">
         {(session || college || item || vue !== "accueil") ? (
           <button onClick={retour} aria-label="Revenir en arrière"
             className="flex items-center justify-center doux shrink-0"
-            style={{ width: 38, height: 38, borderRadius: 999, background: T.card, border: `1px solid ${T.line}`, color: "var(--acc)", fontSize: 19 }}>
+            style={{ width: 38, height: 38, borderRadius: 999, background: T.card, border: `1px solid ${T.line}`, color: T.accent, fontSize: 19 }}>
             ←
           </button>
         ) : (
           <span style={{ fontFamily: serif, fontSize: 19, fontWeight: 700, letterSpacing: "-0.01em" }}>
-            EDN <span style={{ color: "var(--acc)" }}>Go</span>
+            EDN <span style={{ color: T.accent }}>Go</span>
             <span style={{ fontSize: 11, fontWeight: 600, color: T.ink2, marginLeft: 7 }}>{VERSION}</span>
           </span>
         )}
         {!session && (
           <button onClick={() => setMenu(!menu)} className="flex items-center gap-2 px-4 py-2 doux"
-            style={{ borderRadius: 999, background: menu ? "var(--acc)" : T.card, border: `1px solid ${menu ? "var(--acc)" : T.line}` }}>
-            <span style={{ fontSize: 14, color: menu ? "#0E1A29" : "var(--acc)" }}>
+            style={{ borderRadius: 999, background: menu ? T.accent : T.card, border: `1px solid ${menu ? T.accent : T.line}` }}>
+            <span style={{ fontSize: 14, color: menu ? "#0E1A29" : T.accent }}>
               {(ONGLETS.find(([v]) => v === vue) || ["", "", "☰"])[2]}
             </span>
             <span className="text-sm" style={{ fontWeight: 600, color: menu ? "#0E1A29" : T.ink }}>
@@ -3295,7 +3371,7 @@ function App() {
             onOuvrir={setItemId} />
         ) : vue === "grille" ? (
           <Grille colleges={colleges} items={items} scores={scores} resultats={resultats} cartes={cartes} qcms={qcms}
-            onNiveau={definirNiveau} onTour={marquerTour}
+            taches={taches} onComp={definirComp}
             onOuvrir={(id) => { const it = items.find((x) => x.id === id); setCollegeId(it.collegeId); setItemId(id); }} />
         ) : vue === "colleges" ? (
           <VueColleges colleges={colleges} items={items} scores={scores} onOuvrir={setCollegeId} />
@@ -3569,6 +3645,21 @@ function Courbe({ jours }) {
   );
 }
 
+const RUBRIQUES = [
+  { k: ["définition", "definition", "généralités"], c: "#54A9EA" },
+  { k: ["épidémio", "epidemio", "facteur", "terrain"], c: "#EE9BBF" },
+  { k: ["clinique", "signe", "interrogatoire", "symptô"], c: "#E4685D" },
+  { k: ["diagnostic", "paraclinique", "imagerie", "biolog", "examen"], c: "#EAAE43" },
+  { k: ["traitement", "prise en charge", "thérapeut", "conduite"], c: "#35B48C" },
+  { k: ["surveillance", "suivi", "mesure", "prévention", "complication"], c: "#B9A3EE" },
+  { k: ["piège", "piege", "retenir", "erreur", "annale"], c: "#EEB061" },
+];
+function couleurRubrique(t) {
+  const b = (t || "").toLowerCase();
+  const r = RUBRIQUES.find((x) => x.k.some((m) => b.includes(m)));
+  return r ? r.c : T.accent;
+}
+
 function ResumeLu({ texte }) {
   if (!texte.trim()) return null;
   const lignes = texte.split("\n");
@@ -3763,46 +3854,39 @@ function Bilan({ items, colleges, resultats = [], cartes = [], qcms = [], onOuvr
   );
 }
 
-const PASSAGES = [
-  { nom: "Jamais ouvert",      bg: "#182B41", fg: "#5D7488", bord: "#274058" },
-  { nom: "1er passage",        bg: "#8E2F26", fg: "#FFD9D4", bord: "#E4685D" },
-  { nom: "2e passage",         bg: "#9A5312", fg: "#FFE0BC", bord: "#E08A2E" },
-  { nom: "3e passage",         bg: "#8E7412", fg: "#FFF1C2", bord: "#EAC53F" },
-  { nom: "4e passage et plus", bg: "#1E7A5C", fg: "#D6F5E8", bord: "#35B48C" },
+/* niveaux de compréhension : la couleur que TU choisis fixe la prochaine révision */
+const NIVEAUX_C = [
+  { v: 0, nom: "Pas encore vu",     court: "—",  jours: null, bg: "#182B41", fg: "#7E93A6", bord: "#2B4260" },
+  { v: 1, nom: "Pas compris",       court: "J1", jours: 1,    bg: "#8E2F26", fg: "#FFE4E0", bord: "#E4685D" },
+  { v: 2, nom: "Un peu compris",    court: "J3", jours: 3,    bg: "#9A5312", fg: "#FFE8CE", bord: "#E08A2E" },
+  { v: 3, nom: "Moyennement",       court: "J5", jours: 5,    bg: "#8E7412", fg: "#FFF4D2", bord: "#EAC53F" },
+  { v: 4, nom: "Bien compris",      court: "J7", jours: 7,    bg: "#1E7A5C", fg: "#DEF7EC", bord: "#35B48C" },
 ];
-const nivPassage = (it) => Math.min((it.tours || []).length, 4);
+const nivC = (it) => Math.min(it.comp || 0, 4);
+const MOIS_C = ["janv", "févr", "mars", "avr", "mai", "juin", "juil", "août", "sept", "oct", "nov", "déc"];
+const dCourte = (d) => { if (!d) return ""; const x = new Date(d + "T12:00:00"); return `${x.getDate()} ${MOIS_C[x.getMonth()]}`; };
+const ecart = (d) => d ? Math.round((new Date(auj() + "T12:00:00") - new Date(d + "T12:00:00")) / 86400000) : null;
 
-const MOIS_COURT = ["janv", "févr", "mars", "avr", "mai", "juin", "juil", "août", "sept", "oct", "nov", "déc"];
-const dernierTour = (it) => (it.tours || [])[(it.tours || []).length - 1] || null;
-
-/* « 12 août » pour la case */
-function dateCourte(d) {
-  if (!d) return "";
-  const x = new Date(d + "T12:00:00");
-  return `${x.getDate()} ${MOIS_COURT[x.getMonth()]}`;
+function echeance(it) {
+  const n = nivC(it);
+  if (!n || !it.dateComp) return null;
+  const d = new Date(it.dateComp + "T12:00:00");
+  d.setDate(d.getDate() + NIVEAUX_C[n].jours);
+  return iso(d);
 }
-/* « il y a 6 jours » pour le détail */
-function depuis(d) {
-  if (!d) return "jamais ouvert";
-  const n = Math.round((new Date(auj() + "T12:00:00") - new Date(d + "T12:00:00")) / 86400000);
-  if (n <= 0) return "aujourd'hui";
-  if (n === 1) return "hier";
-  if (n < 7) return `il y a ${n} jours`;
-  if (n < 31) return `il y a ${Math.round(n / 7)} semaine${n >= 14 ? "s" : ""}`;
-  if (n < 365) return `il y a ${Math.round(n / 30.44)} mois`;
-  return `il y a plus d'un an`;
+function retard(it) {
+  const e = echeance(it);
+  return e ? Math.round((new Date(auj() + "T12:00:00") - new Date(e + "T12:00:00")) / 86400000) : null;
 }
-/* au-delà de trois semaines sans revoir, la case le signale */
-const froid = (d) => d && (new Date(auj() + "T12:00:00") - new Date(d + "T12:00:00")) / 86400000 >= 21;
 
-function Grille({ colleges, items, scores, resultats, cartes, qcms, onNiveau, onTour, onOuvrir }) {
+function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [], onComp, onOuvrir }) {
   const [filtre, setFiltre] = useState("tous");
   const [q, setQ] = useState("");
   const [panneau, setPanneau] = useState(true);
-  const [flash, setFlash] = useState(null);
+  const [sel, setSel] = useState(null);
+  const [survol, setSurvol] = useState(null);
+  const [histo, setHisto] = useState([]);
   const [vue, setVue] = useState("damier");
-  const [detail, setDetail] = useState(null);
-  const [historique, setHistorique] = useState([]);
 
   const visibles = colleges.filter((c) => filtre === "tous" || c.id === filtre);
   const lignes = items
@@ -3810,30 +3894,34 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, onNiveau, on
     .filter((i) => !q.trim() || i.titre.toLowerCase().includes(q.toLowerCase()) || String(i.numero).startsWith(q))
     .sort((a, b) => a.numero - b.numero);
 
-  const pointer = (i) => {
-    setHistorique((h) => [...h.slice(-19), i.id]);
-    onTour(i.id);
-    const n = Math.min((i.tours || []).length + 1, 4);
-    setFlash({ id: i.id, texte: `Item ${i.numero} · ${PASSAGES[n].nom}` });
-    setTimeout(() => setFlash((f) => (f && f.id === i.id ? null : f)), 3200);
+  /* avancement : un item compte pour sa part de compréhension */
+  const avancement = (l) => l.length
+    ? Math.round(l.reduce((s, i) => s + nivC(i) / 4, 0) / l.length * 100) : 0;
+  const pctTotal = avancement(items);
+
+  const poser = (i, v) => {
+    setHisto((h) => [...h.slice(-19), { id: i.id, comp: i.comp || 0, date: i.dateComp || null }]);
+    onComp(i.id, v);
   };
-  const depointer = (i) => {
-    if (!(i.tours || []).length) return;
-    onNiveau(i.id, -1);
-    const n = (i.tours || []).length - 1;
-    setFlash({ id: i.id, texte: `Item ${i.numero} · retiré — ${n ? PASSAGES[Math.min(n, 4)].nom.toLowerCase() : "jamais ouvert"}`, retrait: true });
-    setTimeout(() => setFlash((f) => (f && f.id === i.id ? null : f)), 2600);
+  const annuler = () => {
+    const d = histo[histo.length - 1];
+    if (!d) return;
+    onComp(d.id, d.comp, d.date);
+    setHisto((h) => h.slice(0, -1));
   };
 
-  const total = lignes.length || 1;
-  const parNiveau = [0, 1, 2, 3, 4].map((n) => lignes.filter((i) => nivPassage(i) === n).length);
-  const ouverts = total - parNiveau[0];
+  /* prochain créneau planifié pour un item */
+  const planifie = (id) => {
+    const t = taches.filter((x) => x.itemId === id && x.date >= auj()).sort((a, b) => a.date.localeCompare(b.date))[0];
+    return t ? t.date : null;
+  };
+
+  const apercu = items.find((i) => i.id === (survol || sel));
 
   return (
     <div>
-      <div className="flex items-start gap-3 mb-4">
-        <button onClick={() => setPanneau(!panneau)} aria-label={panneau ? "Masquer le bilan" : "Afficher le bilan"}
-          className="flex items-center justify-center doux shrink-0"
+      <div className="flex items-start gap-3 mb-3">
+        <button onClick={() => setPanneau(!panneau)} className="flex items-center justify-center doux shrink-0"
           style={{ width: 38, height: 38, borderRadius: 999, background: panneau ? T.accent : T.card,
             color: panneau ? "#fff" : T.accent, border: `1px solid ${panneau ? T.accent : T.line}`, fontSize: 15 }}>
           {panneau ? "«" : "»"}
@@ -3841,33 +3929,38 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, onNiveau, on
         <div className="flex-1">
           <h2 style={{ fontFamily: serif, fontSize: 24 }}>La grille</h2>
           <p className="text-xs mt-1" style={{ color: T.ink2 }}>
-            {ouverts} item(s) ouverts sur {total} · une pression compte un passage de plus
+            Choisis la couleur selon ta compréhension : elle fixe la date de la prochaine révision.
           </p>
+        </div>
+        <div className="text-right shrink-0">
+          <p style={{ fontFamily: serif, fontSize: 27, lineHeight: 1, color: T.accent }}>{pctTotal}%</p>
+          <p className="text-xs" style={{ color: T.ink2 }}>total</p>
         </div>
       </div>
 
-      {/* ruban de progression par passage */}
-      <div className="flex h-2.5 rounded-full overflow-hidden mb-2" style={{ background: "#152438" }}>
-        {[4, 3, 2, 1].map((n) => parNiveau[n] > 0 && (
-          <div key={n} className="doux" style={{ width: (parNiveau[n] / total) * 100 + "%", background: PASSAGES[n].bord }} />
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-2 mb-4 text-xs">
-        {[1, 2, 3, 4].map((n) => (
-          <span key={n} className="flex items-center gap-1.5 px-2.5 py-1" style={{ borderRadius: 999, background: PASSAGES[n].bg }}>
-            <span style={{ color: PASSAGES[n].fg, opacity: 0.85, fontSize: 10.5 }}>{n} passage{n > 1 ? "s" : ""}</span>
-            <b style={{ color: PASSAGES[n].fg }}>{parNiveau[n]}</b>
-          </span>
-        ))}
-        <span className="flex items-center gap-1.5 px-2.5 py-1" style={{ borderRadius: 999, background: PASSAGES[0].bg, color: PASSAGES[0].fg }}>
-          jamais ouvert <b>{parNiveau[0]}</b>
+      {/* légende : couleur = compréhension = délai */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {NIVEAUX_C.slice(1).map((n) => {
+          const nb = lignes.filter((i) => nivC(i) === n.v).length;
+          return (
+            <span key={n.v} className="flex items-center gap-2 px-3 py-1.5"
+              style={{ borderRadius: 999, background: n.bg, border: `1px solid ${n.bord}` }}>
+              <b style={{ color: n.fg, fontSize: 11 }}>{n.court}</b>
+              <span className="text-xs" style={{ color: n.fg, opacity: 0.9 }}>{n.nom}</span>
+              <b style={{ color: n.fg, fontSize: 11 }}>{nb}</b>
+            </span>
+          );
+        })}
+        <span className="flex items-center gap-2 px-3 py-1.5 text-xs"
+          style={{ borderRadius: 999, background: NIVEAUX_C[0].bg, color: NIVEAUX_C[0].fg }}>
+          Pas encore vu <b>{lignes.filter((i) => !nivC(i)).length}</b>
         </span>
         {(() => {
-          const n = lignes.filter((i) => froid(dernierTour(i))).length;
+          const n = lignes.filter((i) => retard(i) !== null && retard(i) >= 0).length;
           return n ? (
-            <span className="flex items-center gap-1.5 px-2.5 py-1"
-              style={{ borderRadius: 999, background: NIV[2].doux, color: NIV[2].encre }}>
-              à revoir <b>{n}</b>
+            <span className="flex items-center gap-2 px-3 py-1.5 text-xs"
+              style={{ borderRadius: 999, background: NIV[2].doux, color: NIV[2].encre, fontWeight: 700 }}>
+              À revoir maintenant <b>{n}</b>
             </span>
           ) : null;
         })()}
@@ -3875,14 +3968,13 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, onNiveau, on
 
       <div className="flex flex-wrap gap-1 mb-3">
         <Chip actif={filtre === "tous"} onClick={() => setFiltre("tous")} p={{ fg: T.ink, bg: T.card }}>
-          Toutes ({items.length})
+          Toutes {pctTotal}%
         </Chip>
         {colleges.map((c) => {
           const l = items.filter((i) => i.collegeId === c.id);
-          const o = l.filter((i) => nivPassage(i) > 0).length;
           return (
             <Chip key={c.id} actif={filtre === c.id} onClick={() => setFiltre(c.id)} p={pal(c.nom)}>
-              {c.nom} {o}/{l.length}
+              {c.nom} {avancement(l)}%
             </Chip>
           );
         })}
@@ -3891,40 +3983,88 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, onNiveau, on
       <div className="flex gap-2 mb-3">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrer par mot ou numéro…"
           className="flex-1 px-3 py-2 text-sm" style={{ borderRadius: 999, border: `1px solid ${T.line}`, background: T.card }} />
-        <button onClick={() => {
-          const dernier = historique[historique.length - 1];
-          if (!dernier) return;
-          const i = items.find((x) => x.id === dernier);
-          setHistorique((h) => h.slice(0, -1));
-          if (i) depointer(i);
-        }} disabled={!historique.length} aria-label="Annuler le dernier passage"
+        <button onClick={annuler} disabled={!histo.length} aria-label="Annuler"
           className="flex items-center justify-center doux"
           style={{ width: 40, height: 38, borderRadius: 999, background: T.card,
-            border: `1px solid ${historique.length ? T.accent : T.line}`,
-            color: historique.length ? T.accent : "#3E5C7C", fontSize: 16 }}>
-          ↺
-        </button>
+            border: `1px solid ${histo.length ? T.accent : T.line}`, color: histo.length ? T.accent : "#3E5C7C", fontSize: 16 }}>↺</button>
         <button onClick={() => setVue(vue === "damier" ? "tableau" : "damier")} className="px-4 py-2 text-xs doux"
           style={{ borderRadius: 999, background: T.card, border: `1px solid ${T.line}`, color: T.ink, fontWeight: 600 }}>
           {vue === "damier" ? "Tableau" : "Damier"}
         </button>
       </div>
 
-      {flash && (
-        <div className="flex items-center gap-3 mb-3 px-4 py-2.5 vue"
-          style={{ background: flash.retrait ? T.card : T.accent, borderRadius: 14, border: `1px solid ${flash.retrait ? T.line : T.accent}` }}>
-          <span className="text-xs flex-1" style={{ color: flash.retrait ? T.ink2 : "#fff", fontWeight: 600 }}>{flash.texte}</span>
-          {!flash.retrait && (
-            <button onClick={() => { const i = items.find((x) => x.id === flash.id); if (i) depointer(i); }}
-              className="text-xs px-3 py-1 doux"
-              style={{ background: "rgba(255,255,255,0.22)", color: "#fff", borderRadius: 999, fontWeight: 700 }}>
-              Annuler
-            </button>
-          )}
-          <button onClick={() => { const i = items.find((x) => x.id === flash.id); setFlash(null); if (i) setDetail(i.id); }}
-            className="text-xs" style={{ color: flash.retrait ? T.accent : "#fff", fontWeight: 600 }}>Détail</button>
-        </div>
-      )}
+      {/* aperçu de l'item survolé ou sélectionné */}
+      {apercu && (() => {
+        const i = apercu;
+        const n = nivC(i);
+        const N = NIVEAUX_C[n];
+        const c = colleges.find((x) => x.id === i.collegeId);
+        const e = echeance(i);
+        const r = retard(i);
+        const pl = planifie(i.id);
+        const sc = scores[i.id];
+        return (
+          <div className="ombre mb-3 vue" style={{ background: T.card, borderRadius: 20, padding: "14px 16px", border: `1px solid ${N.bord}` }}>
+            <div className="flex items-start gap-3 mb-3">
+              <span className="shrink-0 flex items-center justify-center"
+                style={{ width: 44, height: 40, borderRadius: 12, background: N.bg, border: `1.5px solid ${N.bord}`,
+                  color: "#fff", fontWeight: 800, fontSize: 13 }}>{i.numero}</span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm" style={{ fontWeight: 700, lineHeight: 1.35 }}>{i.titre}</span>
+                <span className="block text-xs mt-1" style={{ color: pal(c ? c.nom : "").fg }}>{c ? c.nom : ""}</span>
+              </span>
+              {sel && <button onClick={() => setSel(null)} className="text-sm px-1" style={{ color: T.ink2 }}>✕</button>}
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-xs mb-3">
+              {i.dateComp && (
+                <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.paper, color: T.ink2 }}>
+                  Vu le {dCourte(i.dateComp)} · il y a {ecart(i.dateComp)} j
+                </span>
+              )}
+              {e && (
+                <span className="px-3 py-1.5" style={{ borderRadius: 999,
+                  background: r >= 0 ? NIV[1].doux : T.paper, color: r >= 0 ? NIV[1].encre : T.ink2, fontWeight: r >= 0 ? 700 : 400 }}>
+                  {r >= 0 ? `À revoir — en retard de ${r} j` : `À revoir le ${dCourte(e)}`}
+                </span>
+              )}
+              {pl && (
+                <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.accentPale, color: T.accent, fontWeight: 600 }}>
+                  Planifié le {dCourte(pl)}
+                </span>
+              )}
+              {sc !== null && (
+                <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.paper, color: couleur(sc), fontWeight: 700 }}>
+                  {sc}% aux QCM
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+              Je viens de le travailler — je l'ai…
+            </p>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {NIVEAUX_C.slice(1).map((x) => (
+                <button key={x.v} onClick={() => poser(i, x.v)} className="flex-1 py-2.5 text-xs doux"
+                  style={{ borderRadius: 14, minWidth: 92,
+                    background: n === x.v ? x.bord : x.bg, color: n === x.v ? "#0E1A29" : x.fg,
+                    border: `1px solid ${x.bord}`, fontWeight: 700 }}>
+                  {x.nom}
+                  <span className="block" style={{ opacity: 0.8, fontWeight: 600 }}>revoir à {x.court}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => onOuvrir(i.id)} className="px-4 py-2 text-xs doux"
+                style={{ background: T.accentPale, color: T.accent, borderRadius: 999, fontWeight: 600 }}>Ouvrir l'item</button>
+              {n > 0 && (
+                <button onClick={() => poser(i, 0)} className="px-3 py-2 text-xs doux"
+                  style={{ border: `1px solid ${T.line}`, color: T.ink2, borderRadius: 999 }}>Remettre à zéro</button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="md:flex md:gap-5 md:items-start">
       <div className="md:order-2 md:flex-1 md:min-w-0">
@@ -3933,38 +4073,38 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, onNiveau, on
         const l = lignes.filter((i) => i.collegeId === c.id);
         if (!l.length) return null;
         const p = pal(c.nom);
-        const o = l.filter((i) => nivPassage(i) > 0).length;
         return (
           <div key={c.id} className="mb-6">
             <div className="flex items-baseline justify-between mb-2">
               <span style={{ fontFamily: serif, fontSize: 16, color: p.fg, fontWeight: 600 }}>{c.nom}</span>
-              <span className="text-xs" style={{ color: T.ink2 }}>{o}/{l.length} ouverts</span>
+              <span className="text-xs" style={{ color: T.ink2 }}>
+                {avancement(l)}% · {l.filter((i) => nivC(i)).length}/{l.length}
+              </span>
             </div>
 
             {vue === "damier" ? (
               <div className="flex flex-wrap gap-1.5">
                 {l.map((i) => {
-                  const n = nivPassage(i);
-                  const P = PASSAGES[n];
-                  const sc = scores[i.id];
-                  const dt = dernierTour(i);
-                  const vieux = froid(dt);
+                  const n = nivC(i);
+                  const N = NIVEAUX_C[n];
+                  const r = retard(i);
+                  const pl = planifie(i.id);
                   return (
-                    <button key={i.id} onClick={() => pointer(i)}
-                      onContextMenu={(e) => { e.preventDefault(); setDetail(detail === i.id ? null : i.id); }}
-                      className="relief flex flex-col items-center justify-center"
+                    <button key={i.id}
+                      onClick={() => setSel(sel === i.id ? null : i.id)}
+                      onMouseEnter={() => setSurvol(i.id)} onMouseLeave={() => setSurvol(null)}
+                      title={`${i.numero}. ${i.titre}`}
+                      className="case flex flex-col items-center justify-center"
                       style={{
-                        width: 54, height: 46, borderRadius: 12, background: P.bg,
-                        border: `1.5px solid ${detail === i.id ? "#fff" : vieux ? T.moyen : P.bord}`,
+                        width: 52, height: 46, borderRadius: 12, background: N.bg,
+                        border: `1.5px solid ${sel === i.id ? "#fff" : r >= 0 ? T.moyen : N.bord}`,
                         position: "relative", overflow: "hidden",
                       }}>
-                      <span style={{ fontSize: 9.5, color: P.fg, opacity: 0.7, lineHeight: 1 }}>{i.numero}</span>
-                      <span style={{ fontSize: dt ? 10.5 : 11.5, fontWeight: 800, color: P.fg, lineHeight: 1.3 }}>
-                        {dt ? dateCourte(dt) : "—"}
-                      </span>
-                      {sc !== null && (
-                        <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 4, background: couleur(sc) }} />
+                      <span style={{ fontSize: 13, fontWeight: 800, color: "#FFFFFF", lineHeight: 1.1 }}>{i.numero}</span>
+                      {i.dateComp && (
+                        <span style={{ fontSize: 8.5, color: "#FFFFFF", opacity: 0.72, lineHeight: 1.2 }}>{dCourte(i.dateComp)}</span>
                       )}
+                      {pl && <span style={{ position: "absolute", top: 3, right: 3, width: 5, height: 5, borderRadius: 999, background: T.accent }} />}
                     </button>
                   );
                 })}
@@ -3974,23 +4114,22 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, onNiveau, on
                 <table className="w-full" style={{ borderCollapse: "collapse", fontSize: 12.5 }}>
                   <tbody>
                     {l.map((i) => {
-                      const n = nivPassage(i);
-                      const P = PASSAGES[n];
-                      const sc = scores[i.id];
+                      const N = NIVEAUX_C[nivC(i)];
+                      const pl = planifie(i.id);
+                      const r = retard(i);
                       return (
-                        <tr key={i.id} style={{ borderTop: `1px solid ${T.line}` }}>
-                          <td style={{ width: 40, padding: "9px 4px", color: T.ink2 }}>{i.numero}</td>
-                          <td onClick={() => onOuvrir(i.id)} style={{ padding: "9px 6px", cursor: "pointer", lineHeight: 1.4 }}>{i.titre}</td>
-                          <td style={{ width: 62, textAlign: "right", padding: "9px 4px", color: couleur(sc), fontWeight: 700 }}>
-                            {sc === null ? "—" : sc + "%"}
+                        <tr key={i.id} onClick={() => setSel(sel === i.id ? null : i.id)}
+                          style={{ borderTop: `1px solid ${T.line}`, cursor: "pointer" }}>
+                          <td style={{ width: 42, padding: "9px 4px", color: "#fff", fontWeight: 700 }}>{i.numero}</td>
+                          <td style={{ padding: "9px 6px", lineHeight: 1.4 }}>{i.titre}</td>
+                          <td style={{ width: 76, textAlign: "right", padding: "9px 4px", color: T.accent, fontSize: 11 }}>
+                            {pl ? "◷ " + dCourte(pl) : ""}
                           </td>
-                          <td style={{ width: 96, padding: "6px 0 6px 6px", textAlign: "right" }}>
-                            <button onClick={() => pointer(i)} className="doux"
-                              style={{ minWidth: 86, height: 30, borderRadius: 10, background: P.bg,
-                                border: `1.5px solid ${froid(dernierTour(i)) ? T.moyen : P.bord}`,
-                                color: P.fg, fontSize: 11, fontWeight: 700, padding: "0 8px" }}>
-                              {dernierTour(i) ? dateCourte(dernierTour(i)) : "jamais"}
-                            </button>
+                          <td style={{ width: 86, textAlign: "right", padding: "9px 6px" }}>
+                            <span style={{ padding: "4px 9px", borderRadius: 999, background: N.bg,
+                              border: `1px solid ${r >= 0 ? T.moyen : N.bord}`, color: N.fg, fontWeight: 700, fontSize: 11 }}>
+                              {i.dateComp ? dCourte(i.dateComp) : "jamais"}
+                            </span>
                           </td>
                         </tr>
                       );
@@ -4003,57 +4142,9 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, onNiveau, on
         );
       })}
 
-      {detail && (() => {
-        const i = items.find((x) => x.id === detail);
-        if (!i) return null;
-        const n = nivPassage(i);
-        const P = PASSAGES[n];
-        const dt = dernierTour(i);
-        const sc = scores[i.id];
-        const tours = (i.tours || []).slice(-5).reverse();
-        return (
-          <div className="ombre vue" style={{ position: "sticky", bottom: 12, background: T.card, borderRadius: 22, padding: "16px 18px", marginTop: 14, border: `1px solid ${P.bord}` }}>
-            <div className="flex items-start gap-3 mb-3">
-              <span className="shrink-0 flex flex-col items-center justify-center"
-                style={{ width: 52, height: 46, borderRadius: 12, background: P.bg, border: `1.5px solid ${P.bord}` }}>
-                <span style={{ fontSize: 9.5, color: P.fg, opacity: 0.7 }}>{i.numero}</span>
-                <span style={{ fontSize: 10.5, fontWeight: 800, color: P.fg }}>{dt ? dateCourte(dt) : "—"}</span>
-              </span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-sm" style={{ fontWeight: 600, lineHeight: 1.35 }}>{i.titre}</span>
-                <span className="block text-xs mt-1" style={{ color: froid(dt) ? T.moyen : T.ink2 }}>
-                  {n} passage{n > 1 ? "s" : ""} · dernier {depuis(dt)}
-                  {sc !== null ? ` · ${sc} % aux QCM` : ""}
-                </span>
-              </span>
-              <button onClick={() => setDetail(null)} className="text-sm px-1" style={{ color: T.ink2 }}>✕</button>
-            </div>
-
-            {tours.length > 0 && (
-              <p className="text-xs mb-3" style={{ color: T.ink2 }}>
-                Passages : {tours.map((d) => dateCourte(d)).join(" · ")}
-              </p>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2">
-              {n > 0 && (
-                <button onClick={() => depointer(i)} className="px-4 py-2 text-xs doux"
-                  style={{ border: `1px solid ${T.line}`, color: T.ink2, borderRadius: 999, fontWeight: 600 }}>
-                  ↺ Retirer un passage
-                </button>
-              )}
-              <div className="flex-1" />
-              <button onClick={() => onOuvrir(i.id)} className="px-4 py-2 text-sm doux"
-                style={{ background: T.accentPale, color: T.accent, borderRadius: 999, fontWeight: 600 }}>Ouvrir</button>
-            </div>
-          </div>
-        );
-      })()}
-
-      <p className="text-xs mt-3" style={{ color: T.ink2, lineHeight: 1.7 }}>
-        La case porte la date du dernier passage, la barre du bas ton taux aux QCM.
-        Un contour ambre signale un item non revu depuis trois semaines.
-        Une pression sur la case compte un passage de plus. Clic droit ou appui long pour le détail.
+      <p className="text-xs mt-2" style={{ color: T.ink2, lineHeight: 1.7 }}>
+        Un point bleu en haut d'une case signale un créneau déjà posé dans ton planning.
+        Un contour ambre signale une révision en retard.
       </p>
 
       </div>
@@ -4210,6 +4301,7 @@ function VueItem({ item, college, score, cartes, qcms, annales, resultats, onRes
   const [volet, setVolet] = useState("resume");
   const [edition, setEdition] = useState(false);
   const [genreIA, setGenreIA] = useState("qcm");
+  const lisa = `https://livret.uness.fr/lisa/2025/Sp%C3%A9cial:Recherche?search=${encodeURIComponent(item.titre)}`;
   const onglets = [["resume", "Résumé"], ["flash", `Flashcards${cartes.length ? " · " + cartes.length : ""}`],
   ["qcm", `QCM${qcms.length ? " · " + qcms.length : ""}`], ["fiches", `Fiches${nbFiches ? " · " + nbFiches : ""}`], ["ia", "IA"],
   ["annales", `Annales${annales.length ? " · " + annales.length : ""}`], ["progression", "Progression"]];
@@ -4223,6 +4315,11 @@ function VueItem({ item, college, score, cartes, qcms, annales, resultats, onRes
           {college.nom.toUpperCase()} · ITEM {item.numero}
         </p>
         <h2 style={{ fontFamily: serif, fontSize: 24, lineHeight: 1.25 }}>{item.titre}</h2>
+        <a href={lisa} target="_blank" rel="noreferrer"
+          className="inline-block mt-3 px-4 py-2 text-xs doux"
+          style={{ background: "rgba(255,255,255,0.12)", color: pal(college.nom).fg, borderRadius: 999, fontWeight: 700 }}>
+          Voir la fiche LiSA sur uness.fr ↗
+        </a>
       </div>
       <div className="flex gap-2 mb-3">
         {NIV.slice(1).map((n, k) => {
