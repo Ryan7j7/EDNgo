@@ -187,7 +187,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v37";
+const VERSION = "v38";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1373,6 +1373,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
   const [export_, setExport_] = useState(false);
   const [modeles, setModeles] = useState(false);
   const [purge, setPurge] = useState(false);
+  const [effacer_, setEffacer] = useState(false);
   const [corbeille, setCorbeille] = useState([]);
   const [glisse, setGlisse] = useState(null);
   const [apercu, setApercu] = useState(null);  // position provisoire, non enregistrée
@@ -2412,7 +2413,7 @@ function SessionDossier({ dossier, onNoter, onFin }) {
           onClic={() => setChoix((l) => l.includes(i) ? l.filter((x) => x !== i) : [...l, i])} />
       ))}
 
-      {corrige && <Correction juste={juste} texte={q.explication} />}
+      {corrige && <Correction juste={juste} texte={q.explication} props={q.props} choix={choix} />}
 
       <div className="mt-5">
         {!corrige ? (
@@ -2750,16 +2751,19 @@ ${faibles.length ? "Items sur lesquels l'étudiant est en difficulté : " + faib
 }
 
 /* ================== résultats détaillés ================== */
-function Resultats({ items, colleges, resultats, annales }) {
+function Resultats({ items, colleges, resultats, annales, cartes = [], qcms = [] }) {
   const [periode, setPeriode] = useState(30);
-  const depuis = new Date(Date.now() - periode * 86400000).toISOString().slice(0, 10);
-  const R = resultats.filter((r) => r.date >= depuis);
+  const [colFiltre, setColFiltre] = useState("tous");
+  const [tri, setTri] = useState("faibles");
+  const [ouvert, setOuvert] = useState(null);
 
+  const depuis_ = new Date(Date.now() - periode * 86400000).toISOString().slice(0, 10);
+  const R = resultats.filter((r) => r.date >= depuis_);
   const taux = (l) => l.length ? Math.round(l.reduce((s, x) => s + x.valeur, 0) / l.length * 100) : null;
   const global = taux(R);
 
-  const parType = ["qcm", "qroc", "flash", "annale"].map((t) => ({
-    t, nom: { qcm: "QCM", qroc: "Questions rédigées", flash: "Flashcards", annale: "Annales" }[t],
+  const parType = ["qcm", "qroc", "flash", "annale", "dossier"].map((t) => ({
+    t, nom: { qcm: "QCM", qroc: "Questions rédigées", flash: "Flashcards", annale: "Annales", dossier: "Dossiers" }[t],
     l: R.filter((r) => r.type === t),
   })).filter((x) => x.l.length);
 
@@ -2774,18 +2778,29 @@ function Resultats({ items, colleges, resultats, annales }) {
     return n;
   })();
 
-  const parCollege = colleges.map((c) => {
-    const ids = items.filter((i) => i.collegeId === c.id).map((i) => i.id);
-    const l = R.filter((r) => ids.includes(r.itemId));
-    return { c, l, taux: taux(l), testes: new Set(l.map((r) => r.itemId)).size, total: ids.length };
-  }).filter((x) => x.l.length).sort((a, b) => a.taux - b.taux);
+  /* tableau par item : le cœur de cet onglet */
+  const lignes = items
+    .filter((i) => colFiltre === "tous" || i.collegeId === colFiltre)
+    .map((i) => {
+      const h = resultats.filter((r) => r.itemId === i.id);
+      const hp = R.filter((r) => r.itemId === i.id);
+      const nbExos = cartes.filter((x) => x.itemId === i.id).length + qcms.filter((x) => x.itemId === i.id).length;
+      return { i, n: h.length, nP: hp.length, t: taux(h), tP: taux(hp), nbExos,
+        rates: h.filter((r) => r.valeur < 1).length,
+        dernier: h.length ? h[h.length - 1].date : null };
+    })
+    .filter((x) => x.nbExos > 0 || x.n > 0);
 
-  const parItem = items.map((i) => {
-    const l = resultats.filter((r) => r.itemId === i.id);
-    return { i, n: l.length, taux: taux(l) };
-  }).filter((x) => x.n >= 3);
-  const noires = [...parItem].sort((a, b) => a.taux - b.taux).slice(0, 8);
-  const acquis = [...parItem].filter((x) => x.taux >= 80).length;
+  const triees = [...lignes].sort((a, b) => {
+    if (tri === "faibles") return (a.t ?? 101) - (b.t ?? 101);
+    if (tri === "solides") return (b.t ?? -1) - (a.t ?? -1);
+    if (tri === "volume") return b.n - a.n;
+    return a.i.numero - b.i.numero;
+  });
+
+  const testes = lignes.filter((x) => x.n > 0);
+  const acquis = lignes.filter((x) => x.t !== null && x.t >= 80).length;
+  const fragiles = lignes.filter((x) => x.t !== null && x.t < 50).length;
 
   const L = 300, H = 70;
   const serieJours = [];
@@ -2802,45 +2817,45 @@ function Resultats({ items, colleges, resultats, annales }) {
       <h2 className="mb-1" style={{ fontFamily: serif, fontSize: 26 }}>Résultats</h2>
       <p className="text-xs mb-4" style={{ color: T.ink2 }}>Tout est calculé sur tes réponses, rien n'est déclaratif.</p>
 
-      <div className="flex gap-2 mb-5">
+      <div className="flex gap-2 mb-4 flex-wrap">
         {[7, 30, 90, 3650].map((p) => (
           <button key={p} onClick={() => setPeriode(p)} className="px-4 py-2 text-xs doux"
-            style={{
-              borderRadius: 999, fontWeight: 600,
+            style={{ borderRadius: 999, fontWeight: 600,
               background: periode === p ? T.accent : "transparent", color: periode === p ? "#fff" : T.ink2,
-              border: `1px solid ${periode === p ? T.accent : T.line}`,
-            }}>
+              border: `1px solid ${periode === p ? T.accent : T.line}` }}>
             {p === 3650 ? "Tout" : p + " j"}
           </button>
         ))}
       </div>
 
-      {R.length === 0 ? (
-        <p className="text-sm py-8" style={{ color: T.ink2 }}>
-          Aucune réponse sur cette période. Lance une session depuis l'accueil et reviens ici.
-        </p>
-      ) : (
-        <>
-          <div className="ombre mb-4" style={{ background: T.card, borderRadius: 24, padding: "20px 22px" }}>
-            <div className="flex items-end gap-6 mb-4">
-              <div>
-                <p className="text-xs uppercase" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Réussite globale</p>
-                <p style={{ fontFamily: serif, fontSize: 38, lineHeight: 1.05, color: couleur(global) }}>{global} %</p>
-              </div>
-              <div className="text-xs" style={{ color: T.ink2, lineHeight: 1.9 }}>
-                <div><b style={{ color: T.ink }}>{R.length}</b> réponses</div>
-                <div><b style={{ color: T.ink }}>{jours.length}</b> jours travaillés</div>
-                <div><b style={{ color: T.ink }}>{serie}</b> jours d'affilée</div>
-              </div>
-            </div>
-            {pts && (
-              <svg viewBox={`0 0 ${L} ${H}`} width="100%" height="76" preserveAspectRatio="none">
-                <line x1="0" y1={H * 0.2} x2={L} y2={H * 0.2} stroke={T.line} strokeDasharray="3 3" />
-                <polyline points={pts} fill="none" stroke={T.accent} strokeWidth="2" strokeLinejoin="round" />
-              </svg>
-            )}
+      {/* vue d'ensemble */}
+      <div className="ombre mb-4" style={{ background: T.card, borderRadius: 24, padding: "20px 22px" }}>
+        <div className="flex flex-wrap items-end gap-6 mb-4">
+          <div>
+            <p className="text-xs uppercase" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Réussite</p>
+            <p style={{ fontFamily: serif, fontSize: 38, lineHeight: 1.05, color: couleur(global) }}>
+              {global === null ? "—" : global + " %"}
+            </p>
           </div>
+          <div className="text-xs" style={{ color: T.ink2, lineHeight: 1.9 }}>
+            <div><b style={{ color: T.ink }}>{R.length}</b> réponses · <b style={{ color: T.ink }}>{jours.length}</b> jours</div>
+            <div><b style={{ color: T.ink }}>{serie}</b> jours d'affilée</div>
+          </div>
+          <div className="text-xs" style={{ color: T.ink2, lineHeight: 1.9 }}>
+            <div><b style={{ color: T.haut }}>{acquis}</b> item(s) au-dessus de 80 %</div>
+            <div><b style={{ color: T.bas }}>{fragiles}</b> item(s) sous 50 %</div>
+          </div>
+        </div>
+        {pts && (
+          <svg viewBox={`0 0 ${L} ${H}`} width="100%" height="76" preserveAspectRatio="none">
+            <line x1="0" y1={H * 0.2} x2={L} y2={H * 0.2} stroke={T.line} strokeDasharray="3 3" />
+            <polyline points={pts} fill="none" stroke={T.accent} strokeWidth="2" strokeLinejoin="round" />
+          </svg>
+        )}
+      </div>
 
+      {parType.length > 0 && (
+        <>
           <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Par type d'exercice</p>
           <div className="mb-5">
             {parType.map((x) => (
@@ -2849,80 +2864,115 @@ function Resultats({ items, colleges, resultats, annales }) {
                 <div className="flex-1 h-2 rounded-full" style={{ background: "#1E3149" }}>
                   <div className="doux h-2 rounded-full" style={{ width: taux(x.l) + "%", background: couleur(taux(x.l)) }} />
                 </div>
-                <span className="text-xs" style={{ width: 68, textAlign: "right", color: T.ink2 }}>
+                <span className="text-xs" style={{ width: 70, textAlign: "right", color: T.ink2 }}>
                   {taux(x.l)} % · {x.l.length}
                 </span>
               </div>
             ))}
           </div>
-
-          <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Par collège, du plus faible au plus solide</p>
-          <div className="mb-5">
-            {parCollege.map(({ c, l, taux: t, testes, total }) => {
-              const p = pal(c.nom);
-              return (
-                <div key={c.id} className="flex items-center gap-3 mb-2">
-                  <span className="text-xs" style={{ width: 110, color: p.fg, fontWeight: 600 }}>{c.nom}</span>
-                  <div className="flex-1 h-2 rounded-full" style={{ background: "#1E3149" }}>
-                    <div className="doux h-2 rounded-full" style={{ width: t + "%", background: couleur(t) }} />
-                  </div>
-                  <span className="text-xs" style={{ width: 92, textAlign: "right", color: T.ink2 }}>
-                    {t} % · {testes}/{total}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-
-          {noires.length > 0 && (
-            <>
-              <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
-                Tes bêtes noires — au moins trois tentatives
-              </p>
-              <div className="mb-5">
-                {noires.map(({ i, n, taux: t }) => (
-                  <div key={i.id} className="flex items-center gap-3 py-2" style={{ borderBottom: `1px solid ${T.line}` }}>
-                    <span className="shrink-0 rounded-full" style={{ width: 9, height: 9, background: couleur(t) }} />
-                    <span className="flex-1 text-xs" style={{ lineHeight: 1.4 }}>
-                      <span style={{ color: T.ink2 }}>{i.numero}. </span>{i.titre}
-                    </span>
-                    <span className="text-xs shrink-0" style={{ color: couleur(t), fontWeight: 700 }}>{t} %</span>
-                    <span className="text-xs shrink-0" style={{ color: T.ink2 }}>{n} essais</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          <p className="text-xs" style={{ color: T.ink2, lineHeight: 1.8 }}>
-            {acquis} item(s) au-dessus de 80 % avec au moins trois tentatives.
-            {annales.length > 0 && ` ${annales.length} annale(s) saisie(s).`}
-          </p>
         </>
       )}
+
+      {/* détail item par item */}
+      <div className="flex items-baseline justify-between mb-2">
+        <p className="text-xs uppercase" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Détail par item</p>
+        <span className="text-xs" style={{ color: T.ink2 }}>{testes.length}/{lignes.length} testés</span>
+      </div>
+
+      <div className="flex flex-wrap gap-1 mb-2">
+        <Chip actif={colFiltre === "tous"} onClick={() => setColFiltre("tous")} p={{ fg: T.ink, bg: T.card }}>
+          Toutes
+        </Chip>
+        {colleges.map((c) => {
+          const n = items.filter((i) => i.collegeId === c.id)
+            .filter((i) => cartes.some((x) => x.itemId === i.id) || qcms.some((x) => x.itemId === i.id)).length;
+          return n ? (
+            <Chip key={c.id} actif={colFiltre === c.id} onClick={() => setColFiltre(c.id)} p={pal(c.nom)}>
+              {c.nom} {n}
+            </Chip>
+          ) : null;
+        })}
+      </div>
+
+      <div className="flex gap-2 mb-3">
+        {[["faibles", "Les plus faibles"], ["solides", "Les plus solides"], ["volume", "Les plus travaillés"], ["numero", "Par numéro"]].map(([v, l]) => (
+          <button key={v} onClick={() => setTri(v)} className="px-3 py-1.5 text-xs doux"
+            style={{ borderRadius: 999, fontWeight: 600,
+              background: tri === v ? T.accentPale : "transparent", color: tri === v ? T.accent : T.ink2,
+              border: `1px solid ${tri === v ? "transparent" : T.line}` }}>{l}</button>
+        ))}
+      </div>
+
+      {triees.length === 0 ? (
+        <p className="text-sm py-6" style={{ color: T.ink2 }}>
+          Aucun item ne contient encore d'exercice. Ouvre un item et génère des QCM dans l'onglet IA.
+        </p>
+      ) : (
+        <div className="ombre" style={{ background: T.card, borderRadius: 22, overflow: "hidden" }}>
+          {triees.map((x) => {
+            const c = colleges.find((y) => y.id === x.i.collegeId);
+            const on = ouvert === x.i.id;
+            return (
+              <div key={x.i.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+                <button onClick={() => setOuvert(on ? null : x.i.id)} className="w-full text-left flex items-center gap-3 doux"
+                  style={{ padding: "12px 15px" }}>
+                  <span className="shrink-0 rounded-full" style={{ width: 9, height: 9, background: couleur(x.t) }} />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm" style={{ lineHeight: 1.35 }}>
+                      <span style={{ color: T.ink2 }}>{x.i.numero}. </span>{x.i.titre}
+                    </span>
+                    <span className="block text-xs mt-0.5" style={{ color: pal(c ? c.nom : "").fg }}>{c ? c.nom : ""}</span>
+                  </span>
+                  <span className="shrink-0 text-xs" style={{ color: T.ink2, width: 62, textAlign: "right" }}>
+                    {x.n} rép.
+                  </span>
+                  <span className="shrink-0" style={{ width: 52, textAlign: "right", color: couleur(x.t), fontWeight: 800 }}>
+                    {x.t === null ? "—" : x.t + "%"}
+                  </span>
+                </button>
+
+                {on && (
+                  <div className="vue" style={{ background: T.paper, padding: "13px 15px" }}>
+                    <div className="flex flex-wrap gap-2 text-xs mb-3">
+                      <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.card, color: T.ink2 }}>
+                        {x.nbExos} exercice(s) disponibles
+                      </span>
+                      <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.card, color: T.ink2 }}>
+                        {x.rates} échec(s)
+                      </span>
+                      {x.dernier && (
+                        <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.card, color: T.ink2 }}>
+                          Dernier test le {dCourte(x.dernier)}
+                        </span>
+                      )}
+                      {x.tP !== null && (
+                        <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.card, color: couleur(x.tP), fontWeight: 700 }}>
+                          {x.tP}% sur la période
+                        </span>
+                      )}
+                    </div>
+                    <div className="h-2 rounded-full mb-2" style={{ background: "#1E3149" }}>
+                      <div className="doux h-2 rounded-full" style={{ width: (x.t || 0) + "%", background: couleur(x.t) }} />
+                    </div>
+                    <p className="text-xs" style={{ color: T.ink2, lineHeight: 1.6 }}>
+                      {x.n === 0 ? "Jamais testé — lance une séance sur cet item."
+                        : x.t >= 80 ? "Solide. Espace les révisions."
+                        : x.t >= 50 ? "En cours d'acquisition. Retravaille les propositions ratées."
+                        : "Fragile. Relis le résumé avant de refaire les QCM."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="text-xs mt-4" style={{ color: T.ink2 }}>
+        {annales.length > 0 ? `${annales.length} annale(s) saisie(s).` : ""}
+      </p>
     </div>
   );
-}
-
-class Garde extends React.Component {
-  constructor(p) { super(p); this.state = { err: null }; }
-  static getDerivedStateFromError(err) { return { err }; }
-  render() {
-    if (!this.state.err) return this.props.children;
-    return (
-      <div style={{ padding: 24, color: "#E2ECF6", fontFamily: "inherit", lineHeight: 1.7 }}>
-        <p style={{ color: "#E4685D", fontWeight: 700, marginBottom: 8 }}>Cet écran n'a pas pu s'afficher.</p>
-        <p style={{ fontSize: 13, marginBottom: 12 }}>{String(this.state.err && this.state.err.message || this.state.err)}</p>
-        <button onClick={() => this.setState({ err: null })}
-          style={{ background: "#2C86C6", color: "#fff", borderRadius: 999, padding: "10px 18px", fontWeight: 600 }}>
-          Revenir
-        </button>
-        <p style={{ fontSize: 12, color: "#8CA3BB", marginTop: 14 }}>
-          Tes données sont intactes. Envoie ce message si le problème revient.
-        </p>
-      </div>
-    );
-  }
 }
 
 /* ================== application ================== */
@@ -3370,6 +3420,7 @@ function App() {
         ) : vue === "grille" ? (
           <Grille colleges={colleges} items={items} scores={scores} resultats={resultats} cartes={cartes} qcms={qcms}
             taches={taches} onComp={definirComp}
+            onNote={(id, txt) => setItems((l) => l.map((i) => i.id === id ? { ...i, note: txt } : i))}
             onOuvrir={(id) => { const it = items.find((x) => x.id === id); setCollegeId(it.collegeId); setItemId(id); }} />
         ) : vue === "colleges" ? (
           <VueColleges colleges={colleges} items={items} scores={scores} onOuvrir={setCollegeId} />
@@ -3391,7 +3442,7 @@ function App() {
           <MyCards fiches={fiches} onMaj={setFiches} items={items} colleges={colleges}
             onOuvrirItem={(id) => { const it = items.find((x) => x.id === id); setVue("colleges"); setCollegeId(it.collegeId); setItemId(id); }} />
         ) : vue === "resultats" ? (
-          <Resultats items={items} colleges={colleges} resultats={resultats} annales={annales} />
+          <Resultats items={items} colleges={colleges} resultats={resultats} annales={annales} cartes={cartes} qcms={qcms} />
         ) : vue === "erreurs" ? (
           <Erreurs erreurs={erreurs} items={items}
             onAjouter={(texte, itemId) => setErreurs((l) => [{ id: uid(), texte, itemId, date: auj() }, ...l])}
@@ -3877,12 +3928,118 @@ function retard(it) {
   return e ? Math.round((new Date(auj() + "T12:00:00") - new Date(e + "T12:00:00")) / 86400000) : null;
 }
 
-function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [], onComp, onOuvrir }) {
+function Panneau({ item, colleges, scores, planifie, onPoser, onNote, onOuvrir, onFermer }) {
+  const [note, setNote] = useState(false);
+  const [txt, setTxt] = useState(item.note || "");
+  useEffect(() => { setTxt(item.note || ""); setNote(false); }, [item.id]);
+
+  const n = nivC(item);
+  const N = NIVEAUX_C[n];
+  const c = colleges.find((x) => x.id === item.collegeId);
+  const e = echeance(item);
+  const r = retard(item);
+  const pl = planifie(item.id);
+  const sc = scores[item.id];
+
+  return (
+    <div className="ombre vue my-2" style={{ background: T.card, borderRadius: 20, padding: "14px 16px", border: `1px solid ${N.bord}` }}>
+      <div className="flex items-start gap-3 mb-3">
+        <span className="shrink-0 flex items-center justify-center"
+          style={{ width: 44, height: 40, borderRadius: 12, background: N.bg, border: `1.5px solid ${N.bord}`,
+            color: "#fff", fontWeight: 800, fontSize: 13 }}>{item.numero}</span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm" style={{ fontWeight: 700, lineHeight: 1.35 }}>{item.titre}</span>
+          <span className="block text-xs mt-1" style={{ color: pal(c ? c.nom : "").fg }}>{c ? c.nom : ""}</span>
+        </span>
+        <button onClick={() => setNote(!note)} aria-label="Noter ce que je n'ai pas compris"
+          className="shrink-0 flex items-center justify-center doux"
+          style={{ width: 32, height: 32, borderRadius: 999,
+            background: note || item.note ? T.accent : T.accentPale, color: note || item.note ? "#fff" : T.accent,
+            fontSize: 17, fontWeight: 700 }}>
+          {item.note && !note ? "✎" : "+"}
+        </button>
+        <button onClick={onFermer} className="text-sm px-1 shrink-0" style={{ color: T.ink2 }}>✕</button>
+      </div>
+
+      {note ? (
+        <div className="mb-3">
+          <p className="text-xs mb-2" style={{ color: T.ink2 }}>Ce que je n'ai pas compris, à revoir en priorité</p>
+          <textarea autoFocus value={txt} onChange={(e2) => setTxt(e2.target.value)} rows={3}
+            placeholder="Ex. revoir les consultations du deuxième trimestre, et le calendrier des sérologies."
+            className="w-full p-3 text-sm mb-2" style={{ borderRadius: 14, border: `1px solid ${T.line}`, lineHeight: 1.6 }} />
+          <div className="flex gap-2">
+            <button onClick={() => { onNote(item.id, txt.trim()); setNote(false); }}
+              className="px-4 py-2 text-xs doux" style={{ background: T.accent, color: "#fff", borderRadius: 999, fontWeight: 700 }}>
+              Enregistrer
+            </button>
+            <button onClick={() => { setTxt(item.note || ""); setNote(false); }}
+              className="px-3 py-2 text-xs" style={{ color: T.ink2 }}>Annuler</button>
+          </div>
+        </div>
+      ) : item.note ? (
+        <div className="mb-3 px-3 py-2.5" style={{ background: NIV[2].doux, borderRadius: 14 }}>
+          <p className="text-xs mb-1" style={{ color: NIV[2].encre, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            À revoir en priorité
+          </p>
+          <p style={{ fontFamily: lecture, fontSize: 15, lineHeight: 1.6, color: NIV[2].encre }}>{item.note}</p>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap gap-2 text-xs mb-3">
+        {item.dateComp && (
+          <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.paper, color: T.ink2 }}>
+            Vu le {dCourte(item.dateComp)} · il y a {ecart(item.dateComp)} j
+          </span>
+        )}
+        {e && (
+          <span className="px-3 py-1.5" style={{ borderRadius: 999,
+            background: r >= 0 ? NIV[1].doux : T.paper, color: r >= 0 ? NIV[1].encre : T.ink2, fontWeight: r >= 0 ? 700 : 400 }}>
+            {r >= 0 ? `À revoir — en retard de ${r} j` : `À revoir le ${dCourte(e)}`}
+          </span>
+        )}
+        {pl && (
+          <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.accentPale, color: T.accent, fontWeight: 600 }}>
+            Planifié le {dCourte(pl)}
+          </span>
+        )}
+        {sc !== null && (
+          <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.paper, color: couleur(sc), fontWeight: 700 }}>
+            {sc}% aux QCM
+          </span>
+        )}
+      </div>
+
+      <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+        Je viens de le travailler — je l'ai…
+      </p>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {NIVEAUX_C.slice(1).map((x) => (
+          <button key={x.v} onClick={() => onPoser(item, x.v)} className="flex-1 py-2.5 text-xs doux"
+            style={{ borderRadius: 14, minWidth: 92,
+              background: n === x.v ? x.bord : x.bg, color: n === x.v ? "#0E1A29" : x.fg,
+              border: `1px solid ${x.bord}`, fontWeight: 700 }}>
+            {x.nom}
+            <span className="block" style={{ opacity: 0.8, fontWeight: 600 }}>revoir à {x.court}</span>
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <button onClick={() => onOuvrir(item.id)} className="px-4 py-2 text-xs doux"
+          style={{ background: T.accentPale, color: T.accent, borderRadius: 999, fontWeight: 600 }}>Ouvrir l'item</button>
+        {n > 0 && (
+          <button onClick={() => onPoser(item, 0)} className="px-3 py-2 text-xs doux"
+            style={{ border: `1px solid ${T.line}`, color: T.ink2, borderRadius: 999 }}>Remettre à zéro</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [], onComp, onNote, onOuvrir }) {
   const [filtre, setFiltre] = useState("tous");
   const [q, setQ] = useState("");
   const [panneau, setPanneau] = useState(true);
   const [sel, setSel] = useState(null);
-  const [survol, setSurvol] = useState(null);
   const [histo, setHisto] = useState([]);
   const [vue, setVue] = useState("damier");
 
@@ -3914,7 +4071,7 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [],
     return t ? t.date : null;
   };
 
-  const apercu = items.find((i) => i.id === (survol || sel));
+  const apercu = items.find((i) => i.id === sel);
 
   return (
     <div>
@@ -3991,79 +4148,6 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [],
         </button>
       </div>
 
-      {/* aperçu de l'item survolé ou sélectionné */}
-      {apercu && (() => {
-        const i = apercu;
-        const n = nivC(i);
-        const N = NIVEAUX_C[n];
-        const c = colleges.find((x) => x.id === i.collegeId);
-        const e = echeance(i);
-        const r = retard(i);
-        const pl = planifie(i.id);
-        const sc = scores[i.id];
-        return (
-          <div className="ombre mb-3 vue" style={{ background: T.card, borderRadius: 20, padding: "14px 16px", border: `1px solid ${N.bord}` }}>
-            <div className="flex items-start gap-3 mb-3">
-              <span className="shrink-0 flex items-center justify-center"
-                style={{ width: 44, height: 40, borderRadius: 12, background: N.bg, border: `1.5px solid ${N.bord}`,
-                  color: "#fff", fontWeight: 800, fontSize: 13 }}>{i.numero}</span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-sm" style={{ fontWeight: 700, lineHeight: 1.35 }}>{i.titre}</span>
-                <span className="block text-xs mt-1" style={{ color: pal(c ? c.nom : "").fg }}>{c ? c.nom : ""}</span>
-              </span>
-              {sel && <button onClick={() => setSel(null)} className="text-sm px-1" style={{ color: T.ink2 }}>✕</button>}
-            </div>
-
-            <div className="flex flex-wrap gap-2 text-xs mb-3">
-              {i.dateComp && (
-                <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.paper, color: T.ink2 }}>
-                  Vu le {dCourte(i.dateComp)} · il y a {ecart(i.dateComp)} j
-                </span>
-              )}
-              {e && (
-                <span className="px-3 py-1.5" style={{ borderRadius: 999,
-                  background: r >= 0 ? NIV[1].doux : T.paper, color: r >= 0 ? NIV[1].encre : T.ink2, fontWeight: r >= 0 ? 700 : 400 }}>
-                  {r >= 0 ? `À revoir — en retard de ${r} j` : `À revoir le ${dCourte(e)}`}
-                </span>
-              )}
-              {pl && (
-                <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.accentPale, color: T.accent, fontWeight: 600 }}>
-                  Planifié le {dCourte(pl)}
-                </span>
-              )}
-              {sc !== null && (
-                <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.paper, color: couleur(sc), fontWeight: 700 }}>
-                  {sc}% aux QCM
-                </span>
-              )}
-            </div>
-
-            <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
-              Je viens de le travailler — je l'ai…
-            </p>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {NIVEAUX_C.slice(1).map((x) => (
-                <button key={x.v} onClick={() => poser(i, x.v)} className="flex-1 py-2.5 text-xs doux"
-                  style={{ borderRadius: 14, minWidth: 92,
-                    background: n === x.v ? x.bord : x.bg, color: n === x.v ? "#0E1A29" : x.fg,
-                    border: `1px solid ${x.bord}`, fontWeight: 700 }}>
-                  {x.nom}
-                  <span className="block" style={{ opacity: 0.8, fontWeight: 600 }}>revoir à {x.court}</span>
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => onOuvrir(i.id)} className="px-4 py-2 text-xs doux"
-                style={{ background: T.accentPale, color: T.accent, borderRadius: 999, fontWeight: 600 }}>Ouvrir l'item</button>
-              {n > 0 && (
-                <button onClick={() => poser(i, 0)} className="px-3 py-2 text-xs doux"
-                  style={{ border: `1px solid ${T.line}`, color: T.ink2, borderRadius: 999 }}>Remettre à zéro</button>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
       <div className="md:flex md:gap-5 md:items-start">
       <div className="md:order-2 md:flex-1 md:min-w-0">
 
@@ -4082,7 +4166,7 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [],
 
             {vue === "damier" ? (
               <div className="flex flex-wrap gap-1.5">
-                {l.map((i) => {
+                {l.map((i, k) => {
                   const n = nivC(i);
                   const N = NIVEAUX_C[n];
                   const r = retard(i);
@@ -4090,7 +4174,6 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [],
                   return (
                     <button key={i.id}
                       onClick={() => setSel(sel === i.id ? null : i.id)}
-                      onMouseEnter={() => setSurvol(i.id)} onMouseLeave={() => setSurvol(null)}
                       title={`${i.numero}. ${i.titre}`}
                       className="case flex flex-col items-center justify-center"
                       style={{
@@ -4106,6 +4189,12 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [],
                     </button>
                   );
                 })}
+                {sel && l.some((i) => i.id === sel) && (
+                  <div style={{ width: "100%" }}>
+                    <Panneau item={items.find((x) => x.id === sel)} colleges={colleges} scores={scores}
+                      planifie={planifie} onPoser={poser} onNote={onNote} onOuvrir={onOuvrir} onFermer={() => setSel(null)} />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -4681,7 +4770,7 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
             onClic={() => setChoix((l) => l.includes(i) ? l.filter((x) => x !== i) : [...l, i])} />
         ))}
 
-        {corrige && <Correction juste={juste} texte={q.explication} />}
+        {corrige && <Correction juste={juste} texte={q.explication} props={q.props} choix={choix} />}
 
         <div className="mt-5">
           {!corrige ? (
@@ -4785,22 +4874,44 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
 }
 
 function Proposition({ p, i, choisi, corrige, onClic }) {
+  /* quatre situations distinctes une fois corrigé */
+  const oubli = corrige && p.vrai && !choisi;        // il fallait cocher, tu ne l'as pas fait
+  const erreur = corrige && !p.vrai && choisi;       // tu as coché, il ne fallait pas
+  const bonne = corrige && p.vrai && choisi;         // correctement cochée
+  const rate = oubli || erreur;
+
   let bg = T.card, bd = T.line, pastilleBg = "#1E3149", pastilleC = T.ink2, marque = LETTRES[i];
   if (corrige) {
-    if (p.vrai) { bg = NIV[3].doux; bd = T.haut; pastilleBg = T.haut; pastilleC = "#fff"; marque = "✓"; }
-    else { bd = choisi ? T.bas : T.line; bg = choisi ? NIV[1].doux : T.card;
-           pastilleBg = choisi ? T.bas : "#1E3149"; pastilleC = choisi ? "#fff" : T.ink2; marque = choisi ? "✗" : LETTRES[i]; }
+    if (bonne) { bg = NIV[3].doux; bd = T.haut; pastilleBg = T.haut; pastilleC = "#fff"; marque = "✓"; }
+    else if (oubli) { bg = NIV[1].doux; bd = T.bas; pastilleBg = T.bas; pastilleC = "#fff"; marque = "!"; }
+    else if (erreur) { bg = NIV[1].doux; bd = T.bas; pastilleBg = T.bas; pastilleC = "#fff"; marque = "✗"; }
+    else { bg = T.card; bd = T.line; pastilleBg = "#1E3149"; pastilleC = T.ink2; marque = LETTRES[i]; }
   } else if (choisi) { bd = T.accent; bg = T.accentPale; pastilleBg = T.accent; pastilleC = "#fff"; }
 
+  const etiquette = oubli ? "Il fallait la cocher" : erreur ? "Tu l'as cochée à tort"
+    : bonne ? "Bien cochée" : corrige ? "Bien laissée de côté" : null;
+
   return (
-    <div className="mb-2 doux" style={{ background: bg, border: `1.5px solid ${bd}`, borderRadius: 16 }}>
+    <div className="mb-2 doux" style={{
+      background: bg, border: `${rate ? 2 : 1.5}px solid ${bd}`, borderRadius: 16,
+      boxShadow: rate ? `0 0 0 3px ${T.bas}22` : "none",
+    }}>
       <button disabled={corrige} onClick={onClic} className="w-full text-left flex gap-3 items-start"
         style={{ padding: "13px 15px" }}>
         <span className="shrink-0 flex items-center justify-center doux"
-          style={{ width: 26, height: 26, borderRadius: 999, background: pastilleBg, color: pastilleC, fontSize: 13, fontWeight: 700 }}>
+          style={{ width: 26, height: 26, borderRadius: 999, background: pastilleBg, color: pastilleC, fontSize: 13, fontWeight: 800 }}>
           {marque}
         </span>
-        <span style={{ fontSize: 14.5, lineHeight: 1.45, paddingTop: 3 }}>{p.txt}</span>
+        <span className="flex-1 min-w-0">
+          <span className="block" style={{ fontSize: 14.5, lineHeight: 1.45 }}>{p.txt}</span>
+          {corrige && (
+            <span className="inline-block mt-1.5 px-2.5 py-1" style={{
+              borderRadius: 999, fontSize: 10.5, fontWeight: 700, letterSpacing: "0.04em",
+              background: rate ? T.bas : bonne ? T.haut : "#1E3149",
+              color: rate || bonne ? "#0E1A29" : T.ink2,
+            }}>{etiquette}</span>
+          )}
+        </span>
       </button>
       {corrige && p.pourquoi && (
         <p style={{
@@ -4817,15 +4928,33 @@ function Proposition({ p, i, choisi, corrige, onClic }) {
   );
 }
 
-function Correction({ juste, texte }) {
-  if (!texte) return null;
+function Correction({ juste, texte, props: pr, choix }) {
+  const oublis = (pr || []).map((p, i) => p.vrai && !(choix || []).includes(i) ? LETTRES[i] : null).filter(Boolean);
+  const erreurs = (pr || []).map((p, i) => !p.vrai && (choix || []).includes(i) ? LETTRES[i] : null).filter(Boolean);
+  if (!texte && !oublis.length && !erreurs.length) return null;
   return (
     <div className="mt-4" style={{ background: T.card, borderRadius: 20, padding: "16px 18px", border: `1px solid ${juste ? T.haut : T.bas}` }}>
       <p style={{ fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase",
         color: juste ? NIV[3].encre : NIV[1].encre, marginBottom: 8 }}>
         {juste ? "Bonne réponse — le raisonnement" : "Le raisonnement attendu"}
       </p>
-      <p style={{ fontFamily: lecture, fontSize: 16, lineHeight: 1.75, color: "#D6E4F1" }}>{texte}</p>
+
+      {!juste && (oublis.length > 0 || erreurs.length > 0) && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {oublis.length > 0 && (
+            <span className="px-3 py-1.5 text-xs" style={{ borderRadius: 999, background: NIV[1].doux, color: NIV[1].encre, fontWeight: 700 }}>
+              Oubliée{oublis.length > 1 ? "s" : ""} : {oublis.join(", ")}
+            </span>
+          )}
+          {erreurs.length > 0 && (
+            <span className="px-3 py-1.5 text-xs" style={{ borderRadius: 999, background: NIV[1].doux, color: NIV[1].encre, fontWeight: 700 }}>
+              Cochée{erreurs.length > 1 ? "s" : ""} à tort : {erreurs.join(", ")}
+            </span>
+          )}
+        </div>
+      )}
+
+      {texte && <p style={{ fontFamily: lecture, fontSize: 16, lineHeight: 1.75, color: "#D6E4F1" }}>{texte}</p>}
     </div>
   );
 }
@@ -5077,7 +5206,7 @@ function Session({ paquet, onNoter, onFin, items }) {
               onClic={() => setChoix((l) => l.includes(i) ? l.filter((x) => x !== i) : [...l, i])} />
           ))}
           {corrige && (
-            <Correction juste={(e.props || []).every((p, i) => p.vrai === choix.includes(i))} texte={e.explication} />
+            <Correction juste={(e.props || []).every((p, i) => p.vrai === choix.includes(i))} texte={e.explication} props={e.props} choix={choix} />
           )}
           <div className="mt-4">
             {!corrige ? (
