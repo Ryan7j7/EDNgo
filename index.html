@@ -187,7 +187,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v40";
+const VERSION = "v41";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -2374,7 +2374,8 @@ function SessionDossier({ dossier, onNoter, onFin }) {
 
   const q = dossier.questions[n];
   if (!q) return null;
-  const juste = (q.props || []).every((p, i) => p.vrai === choix.includes(i));
+  const ordre = propsMelangees(q, n);
+  const juste = ordre.every((p, i) => p.vrai === choix.includes(i));
 
   return (
     <div>
@@ -2408,12 +2409,12 @@ function SessionDossier({ dossier, onNoter, onFin }) {
 
       <p className="mb-4" style={{ fontSize: 16, lineHeight: 1.55, fontWeight: 500 }}>{q.enonce}</p>
 
-      {(q.props || []).map((p, i) => (
+      {ordre.map((p, i) => (
         <Proposition key={i} p={p} i={i} choisi={choix.includes(i)} corrige={corrige}
           onClic={() => setChoix((l) => l.includes(i) ? l.filter((x) => x !== i) : [...l, i])} />
       ))}
 
-      {corrige && <Correction juste={juste} texte={q.explication} props={q.props} choix={choix} />}
+      {corrige && <Correction juste={juste} texte={q.explication} props={ordre} choix={choix} />}
 
       <div className="mt-5">
         {!corrige ? (
@@ -4774,7 +4775,8 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
           onQuitter={() => { setMode("liste"); setN(0); }} />
       );
     }
-    const juste = (q.props || []).every((p, i) => p.vrai === choix.includes(i));
+    const ordre = propsMelangees(q, n);
+    const juste = ordre.every((p, i) => p.vrai === choix.includes(i));
     return (
       <div>
         <div className="flex items-center gap-3 mb-4">
@@ -4788,12 +4790,12 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
 
         <p className="mb-5" style={{ fontSize: 16, lineHeight: 1.55, fontWeight: 500 }}>{q.enonce}</p>
 
-        {(q.props || []).map((p, i) => (
+        {ordre.map((p, i) => (
           <Proposition key={i} p={p} i={i} choisi={choix.includes(i)} corrige={corrige}
             onClic={() => setChoix((l) => l.includes(i) ? l.filter((x) => x !== i) : [...l, i])} />
         ))}
 
-        {corrige && <Correction juste={juste} texte={q.explication} props={q.props} choix={choix} />}
+        {corrige && <Correction juste={juste} texte={q.explication} props={ordre} choix={choix} />}
 
         <div className="mt-5">
           {!corrige ? (
@@ -5224,18 +5226,18 @@ function Session({ paquet, onNoter, onFin, items }) {
       ) : (
         <>
           <p className="text-sm mb-4">{e.enonce}</p>
-          {(e.props || []).map((p, i) => (
+          {propsMelangees(e, n).map((p, i) => (
             <Proposition key={i} p={p} i={i} choisi={choix.includes(i)} corrige={corrige}
               onClic={() => setChoix((l) => l.includes(i) ? l.filter((x) => x !== i) : [...l, i])} />
           ))}
           {corrige && (
-            <Correction juste={(e.props || []).every((p, i) => p.vrai === choix.includes(i))} texte={e.explication} props={e.props} choix={choix} />
+            <Correction juste={propsMelangees(e, n).every((p, i) => p.vrai === choix.includes(i))} texte={e.explication} props={propsMelangees(e, n)} choix={choix} />
           )}
           <div className="mt-4">
             {!corrige ? (
               <button onClick={() => setCorrige(true)} className="px-4 py-3 rounded text-sm" style={{ background: T.ink, color: T.card }}>Valider</button>
             ) : (
-              <button onClick={() => suivant((e.props || []).every((p, i) => p.vrai === choix.includes(i)))}
+              <button onClick={() => suivant(propsMelangees(e, n).every((p, i) => p.vrai === choix.includes(i)))}
                 className="px-4 py-3 rounded text-sm" style={{ background: T.ink, color: T.card }}>Suivant</button>
             )}
           </div>
