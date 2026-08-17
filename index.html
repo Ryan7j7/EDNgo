@@ -187,7 +187,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v38";
+const VERSION = "v40";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -2975,6 +2975,29 @@ function Resultats({ items, colleges, resultats, annales, cartes = [], qcms = []
   );
 }
 
+class Garde extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div style={{ padding: 24, color: "#E2ECF6", lineHeight: 1.7 }}>
+        <p style={{ color: "#E4685D", fontWeight: 700, marginBottom: 8 }}>Cet écran n'a pas pu s'afficher.</p>
+        <p style={{ fontSize: 13, marginBottom: 12 }}>
+          {String((this.state.err && this.state.err.message) || this.state.err)}
+        </p>
+        <button onClick={() => this.setState({ err: null })}
+          style={{ background: "#2C86C6", color: "#fff", borderRadius: 999, padding: "10px 18px", fontWeight: 600 }}>
+          Revenir
+        </button>
+        <p style={{ fontSize: 12, color: "#8CA3BB", marginTop: 14 }}>
+          Tes données sont intactes. Envoie ce message si le problème revient.
+        </p>
+      </div>
+    );
+  }
+}
+
 /* ================== application ================== */
 function App() {
   const depart = useRef(graine());
@@ -5224,7 +5247,11 @@ function Session({ paquet, onNoter, onFin, items }) {
 
 const conteneur = document.getElementById("root");
 conteneur.dataset.ok = "1";
-ReactDOM.createRoot(conteneur).render(<Garde><App /></Garde>);
+conteneur.dataset.monte = "0";
+const racine = ReactDOM.createRoot(conteneur);
+if (ReactDOM.flushSync) ReactDOM.flushSync(() => racine.render(<Garde><App /></Garde>));
+else racine.render(<Garde><App /></Garde>);
+setTimeout(function () { conteneur.dataset.monte = "1"; }, 0);
 </script>
 
 <script>
@@ -5248,13 +5275,23 @@ ReactDOM.createRoot(conteneur).render(<Garde><App /></Garde>);
       return montrer("Erreur de syntaxe dans le code.", e.message, e.loc ? e.loc.line : null);
     }
     try {
+      window.__demarrage = true;
       (0, eval)(code);
     } catch (e) {
-      return montrer("EDN Go n'a pas pu demarrer.", (e && e.stack) || e, null);
+      var msg = (e && (e.name ? e.name + " : " : "") + (e.message || "")) || String(e);
+      return montrer("EDN Go n'a pas pu demarrer.", msg + "\n\n" + ((e && e.stack) || ""), null);
     }
   }
 
   /* Babel, React et Tailwind viennent d'internet : on attend qu'ils soient la */
+  window.addEventListener("error", function (ev) {
+    var r = document.getElementById("root");
+    if (r && r.dataset.monte !== "1") {
+      var d = ev.error ? ((ev.error.name || "") + " : " + (ev.error.message || "")) : (ev.message || "");
+      montrer("EDN Go n'a pas pu demarrer.", d + "\n\n" + ((ev.error && ev.error.stack) || ""));
+    }
+  });
+
   var essais = 0;
   (function attendre() {
     if (window.Babel && window.React && window.ReactDOM) return demarrer();
