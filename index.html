@@ -58,136 +58,424 @@ const lecture = '"Newsreader", "Iowan Old Style", Georgia, serif';
 const mono = '"Plus Jakarta Sans", ui-monospace, "SF Mono", monospace';
 
 const CATALOGUE = {
-  Cardiologie: [
-    [152, "Endocardite infectieuse"], [153, "Surveillance des porteurs de valve et prothèses vasculaires"],
-    [221, "Athérome : épidémiologie, physiopathologie, malade poly-athéromateux"],
-    [222, "Facteurs de risque cardio-vasculaire et prévention"], [223, "Dyslipidémies"],
+  "Santé publique et médecine légale": [
+    [1, "La relation médecin-malade, communication, annonce d'une maladie grave"],
+    [2, "Les valeurs professionnelles du médecin et des autres professions de santé"],
+    [3, "Le raisonnement et la décision en médecine. Médecine fondée sur les preuves"],
+    [4, "Qualité et sécurité des soins. Gestion des risques. Événements indésirables"],
+    [5, "La gestion des erreurs et des plaintes ; l'aléa thérapeutique"],
+    [6, "Organisation de l'exercice clinique et sécurisation du parcours du patient"],
+    [7, "Les droits individuels et collectifs du patient"],
+    [8, "Les discriminations"],
+    [9, "Introduction à l'éthique médicale"],
+    [10, "Approches transversales du corps"],
+    [11, "Violences et santé"],
+    [12, "Violences sexuelles"],
+    [13, "Certificats médicaux. Décès et législation"],
+    [14, "La mort"],
+    [16, "Organisation du système de soins. Régulation. Indicateurs. Parcours de soins"],
+    [17, "Télémédecine, télésanté et téléservices en santé"],
+    [18, "Santé et numérique"],
+    [19, "Sécurité sociale, assurance maladie, protection sociale, économie de la santé"],
+    [20, "La méthodologie de la recherche en santé"],
+    [21, "Mesure de l'état de santé de la population"],
+    [22, "Maladies rares"],
+    [145, "Surveillance des maladies infectieuses transmissibles"],
+    [146, "Vaccinations"],
+    [178, "Risques émergents, bioterrorisme, maladies hautement transmissibles"],
+    [179, "Risques sanitaires liés à l'eau et à l'alimentation. Toxi-infections alimentaires"],
+    [180, "Risques sanitaires liés aux irradiations. Radioprotection"],
+    [181, "Sécurité sanitaire des produits destinés à l'homme. Veille sanitaire"],
+    [182, "Environnement professionnel et santé au travail"],
+    [183, "Organisation de la médecine du travail. Prévention des risques professionnels"],
+    [184, "Accidents du travail et maladies professionnelles"],
+    [290, "Épidémiologie, facteurs de risque, prévention et dépistage des cancers"],
+    [333, "Situations sanitaires exceptionnelles"],
+    [367, "Impact de l'environnement sur la santé"],
+  ],
+  "Gynécologie-obstétrique": [
+    [23, "Grossesse normale"],
+    [24, "Principales complications de la grossesse"],
+    [25, "Grossesse extra-utérine"],
+    [26, "Douleur abdominale aiguë chez une femme enceinte"],
+    [27, "Prévention des risques fœtaux : infection, médicaments, toxiques, irradiation"],
+    [28, "Particularités de l'infection urinaire au cours de la grossesse"],
+    [29, "Risques professionnels pour la maternité liés au travail de la mère"],
+    [30, "Prématurité et retard de croissance intra-utérin : facteurs de risque et prévention"],
+    [31, "Accouchement, délivrance et suites de couches normales"],
+    [33, "Allaitement maternel"],
+    [34, "Suites de couches pathologiques : pathologie maternelle dans les 40 jours"],
+    [35, "Anomalies du cycle menstruel et métrorragies"],
+    [36, "Contraception"],
+    [37, "Interruption volontaire de grossesse"],
+    [38, "Infertilité du couple : conduite de la première consultation"],
+    [39, "Assistance médicale à la procréation : aspects biologiques, médicaux et éthiques"],
+    [40, "Algies pelviennes chez la femme"],
+    [41, "Endométriose"],
+    [42, "Aménorrhée"],
+    [43, "Hémorragie génitale chez la femme"],
+    [44, "Tuméfaction pelvienne chez la femme"],
+    [124, "Ménopause, insuffisance ovarienne prématurée, andropause"],
+    [254, "Besoins nutritionnels et grossesse"],
+    [255, "Diabète gestationnel"],
+    [300, "Tumeurs du col utérin, tumeur du corps utérin"],
+    [306, "Tumeurs de l'ovaire"],
+    [312, "Tumeurs du sein"],
+    [344, "Prééclampsie"],
+  ],
+  "Pédiatrie": [
+    [32, "Évaluation et soins du nouveau-né à terme"],
+    [45, "Spécificités des maladies génétiques"],
+    [46, "Médecine génomique"],
+    [47, "Suivi d'un nourrisson, d'un enfant et d'un adolescent normal. Dépistages"],
+    [48, "Alimentation et besoins nutritionnels du nourrisson et de l'enfant"],
+    [49, "Puberté normale et pathologique"],
+    [51, "Troubles de la miction chez l'enfant"],
+    [53, "Retard de croissance staturo-pondérale"],
+    [54, "Boiterie chez l'enfant"],
+    [55, "Développement psychomoteur du nourrisson et de l'enfant"],
+    [56, "L'enfant handicapé"],
+    [57, "Maltraitance, enfants en danger, protection maternelle et infantile"],
+    [137, "Douleur chez l'enfant : évaluation et traitements antalgiques"],
+    [163, "Coqueluche"],
+    [164, "Exanthèmes fébriles de l'enfant"],
+    [165, "Oreillons"],
+    [238, "Souffle cardiaque chez l'enfant"],
+    [286, "Diarrhée aiguë et déshydratation chez le nourrisson, l'enfant et l'adulte"],
+    [297, "Cancer de l'enfant : particularités épidémiologiques et thérapeutiques"],
+    [345, "Malaise grave du nourrisson et mort inattendue du nourrisson"],
+    [346, "Convulsions chez le nourrisson et chez l'enfant"],
+    [364, "Fractures chez l'enfant : particularités"],
+  ],
+  "Psychiatrie et addictologie": [
+    [15, "Soins psychiatriques sans consentement"],
+    [58, "Sexualité normale et ses troubles"],
+    [59, "Sujets en situation de précarité"],
+    [60, "Facteurs de risque, prévention, dépistage des troubles psychiques"],
+    [61, "Bases des classifications des troubles mentaux"],
+    [62, "Organisation de l'offre de soins en psychiatrie"],
+    [63, "Trouble schizophrénique"],
+    [64, "Trouble bipolaire"],
+    [65, "Trouble délirant persistant"],
+    [66, "Troubles dépressif, anxieux, panique, phobique, TOC, PTSD, personnalité"],
+    [67, "Troubles envahissants du développement"],
+    [68, "Troubles du comportement de l'adolescent"],
+    [69, "Troubles psychiques de la grossesse et du post-partum"],
+    [70, "Troubles psychiques du sujet âgé"],
+    [71, "Troubles des conduites alimentaires"],
+    [72, "Troubles à symptomatologie somatique et apparentés"],
+    [73, "Différents types de techniques psychothérapeutiques"],
+    [74, "Prescription et surveillance des psychotropes"],
+    [75, "Addiction au tabac"],
+    [76, "Addiction à l'alcool"],
+    [77, "Addiction aux médicaments psychotropes"],
+    [78, "Addiction au cannabis, cocaïne, amphétamines, opiacés, drogues de synthèse"],
+    [79, "Addictions comportementales"],
+    [80, "Dopage et conduites dopantes"],
+    [121, "Handicap psychique"],
+    [351, "Agitation et délire aigu"],
+    [352, "Crise d'angoisse aiguë et attaque de panique"],
+    [353, "Risque et conduite suicidaires : identification et prise en charge"],
+  ],
+  "Ophtalmologie": [
+    [52, "Strabisme et amblyopie de l'enfant"],
+    [81, "Altération chronique de la vision"],
+    [82, "Altération aiguë de la vision"],
+    [83, "Infections et inflammations oculaires"],
+    [84, "Glaucomes"],
+    [85, "Troubles de la réfraction"],
+    [86, "Pathologie des paupières"],
+    [102, "Diplopie"],
+  ],
+  "ORL et chirurgie maxillo-faciale": [
+    [87, "Épistaxis"],
+    [88, "Trouble aigu de la parole et dysphonie"],
+    [89, "Altération de la fonction auditive"],
+    [90, "Pathologie des glandes salivaires"],
+    [103, "Vertige"],
+    [148, "Infections naso-sinusiennes de l'adulte et de l'enfant"],
+    [149, "Angines de l'adulte et de l'enfant et rhinopharyngites de l'enfant"],
+    [150, "Otites infectieuses de l'adulte et de l'enfant"],
+    [298, "Tumeurs de la cavité buccale, naso-sinusiennes, du cavum et des VADS"],
+    [335, "Traumatisme maxillo-facial et oculaire"],
+  ],
+  "Neurologie": [
+    [91, "Déficit neurologique récent"],
+    [92, "Déficit moteur et/ou sensitif des membres"],
+    [93, "Compression médullaire non traumatique et syndrome de la queue de cheval"],
+    [96, "Neuropathies périphériques"],
+    [97, "Polyradiculonévrite aiguë inflammatoire (syndrome de Guillain-Barré)"],
+    [98, "Myasthénie"],
+    [99, "Migraine, névralgie du trijumeau et algies de la face"],
+    [100, "Céphalée inhabituelle aiguë et chronique"],
+    [101, "Paralysie faciale"],
+    [104, "Sclérose en plaques"],
+    [105, "Épilepsie"],
+    [106, "Maladie de Parkinson"],
+    [107, "Mouvements anormaux"],
+    [108, "Confusion, démences"],
+    [109, "Troubles de la marche et de l'équilibre"],
+    [110, "Troubles du sommeil"],
+    [299, "Tumeurs intracrâniennes"],
+    [336, "Coma non traumatique chez l'adulte et chez l'enfant"],
+    [340, "Accidents vasculaires cérébraux"],
+    [341, "Hémorragie méningée"],
+    [342, "Malaise, perte de connaissance, crise convulsive chez l'adulte"],
+    [343, "État confusionnel et trouble de conscience"],
+  ],
+  "Dermatologie": [
+    [111, "Dermatoses faciales : acné, rosacée, dermatite séborrhéique"],
+    [112, "Dermatose bulleuse"],
+    [113, "Hémangiomes et malformations vasculaires cutanées"],
+    [114, "Exanthème et érythrodermie"],
+    [115, "Toxidermies"],
+    [116, "Prurit"],
+    [117, "Psoriasis"],
+    [155, "Infections cutanéo-muqueuses et des phanères, bactériennes et mycosiques"],
+    [171, "Gale et pédiculose"],
+    [187, "Hypersensibilités et allergies cutanéomuqueuses. Urticaire, dermatite atopique"],
+    [302, "Tumeurs cutanées, épithéliales et mélaniques"],
+    [350, "Grosse jambe rouge aiguë"],
+  ],
+  "Gériatrie et médecine physique": [
+    [118, "La personne handicapée : bases de l'évaluation fonctionnelle et thérapeutique"],
+    [119, "Soin et accompagnement dans la maladie chronique et le handicap"],
+    [120, "Complications de l'immobilité et du décubitus"],
+    [122, "Principales techniques de rééducation et de réadaptation"],
+    [123, "Vieillissement normal : aspects biologiques, fonctionnels et relationnels"],
+    [130, "La personne âgée malade : particularités sémiologiques et thérapeutiques"],
+    [131, "Troubles de la marche et de l'équilibre du sujet âgé"],
+    [132, "Troubles cognitifs du sujet âgé"],
+    [133, "Autonomie et dépendance chez le sujet âgé"],
+    [252, "Troubles nutritionnels chez le sujet âgé"],
+  ],
+  "Douleur et soins palliatifs": [
+    [134, "Bases neurophysiologiques d'une douleur aiguë et d'une douleur chronique"],
+    [135, "Thérapeutiques antalgiques, médicamenteuses et non médicamenteuses"],
+    [136, "Anesthésie locale, locorégionale et générale"],
+    [138, "Douleur chez la personne vulnérable"],
+    [139, "Soins palliatifs : repères cliniques et organisation des équipes"],
+    [140, "Soins palliatifs : accompagnement du malade et repères éthiques"],
+    [141, "Soins palliatifs : sédation en phase terminale, demande d'euthanasie"],
+    [142, "Aspects spécifiques des soins palliatifs en pédiatrie"],
+    [143, "Aspects spécifiques des soins palliatifs en réanimation"],
+    [144, "Deuil normal et pathologique"],
+  ],
+  "Maladies infectieuses": [
+    [147, "Fièvre aiguë chez l'enfant et l'adulte"],
+    [151, "Méningite, méningoencéphalite, abcès cérébral"],
+    [152, "Endocardite infectieuse"],
+    [153, "Surveillance des porteurs de valve et prothèses vasculaires"],
+    [157, "Septicémie, bactériémie, fongémie de l'adulte et de l'enfant"],
+    [158, "Sepsis et choc septique de l'enfant et de l'adulte"],
+    [159, "Tuberculose de l'adulte et de l'enfant"],
+    [160, "Tétanos"],
+    [162, "Infections sexuellement transmissibles"],
+    [166, "Grippe"],
+    [167, "Hépatites virales"],
+    [168, "Infections à herpès virus du sujet immunocompétent"],
+    [169, "Infections à VIH"],
+    [170, "Paludisme"],
+    [172, "Parasitoses digestives"],
+    [173, "Zoonoses"],
+    [174, "Pathologie infectieuse chez les migrants adultes et enfants"],
+    [175, "Voyage en pays tropical : conseils avant le départ, pathologies du retour"],
+    [176, "Diarrhées infectieuses de l'adulte et de l'enfant"],
+    [177, "Prescription et surveillance des anti-infectieux"],
+    [190, "Fièvre prolongée"],
+    [191, "Fièvre chez un patient immunodéprimé"],
+    [349, "Infection aiguë des parties molles"],
+    [366, "Exposition accidentelle aux liquides biologiques : conduite à tenir"],
+  ],
+  "Immunologie et médecine interne": [
+    [185, "Réaction inflammatoire : aspects biologiques et cliniques"],
+    [186, "Hypersensibilités et allergies : physiopathologie et principes de traitement"],
+    [189, "Déficit immunitaire"],
+    [192, "Pathologies auto-immunes : diagnostic et principes de traitement"],
+    [193, "Vascularites systémiques"],
+    [194, "Lupus systémique. Syndrome des anti-phospholipides"],
+    [195, "Artérite à cellules géantes"],
+    [201, "Transplantation d'organes. Prélèvements d'organes et législation"],
+    [202, "Biothérapies et thérapies ciblées"],
+  ],
+  "Rhumatologie": [
+    [94, "Rachialgie"],
+    [95, "Radiculalgie et syndrome canalaire"],
+    [128, "Ostéopathies fragilisantes"],
+    [129, "Arthrose"],
+    [156, "Infections ostéo-articulaires de l'enfant et de l'adulte"],
+    [196, "Polyarthrite rhumatoïde"],
+    [197, "Spondyloarthrite"],
+    [198, "Arthropathie microcristalline"],
+    [199, "Syndrome douloureux régional complexe"],
+    [200, "Douleur et épanchement articulaire. Arthrite d'évolution récente"],
+    [307, "Tumeurs des os primitives et secondaires"],
+  ],
+  "Pneumologie": [
+    [154, "Infections broncho-pulmonaires communautaires de l'adulte et de l'enfant"],
+    [188, "Hypersensibilité et allergies respiratoires. Asthme, rhinite"],
+    [203, "Dyspnée aiguë et chronique"],
+    [204, "Toux chez l'enfant et chez l'adulte"],
+    [205, "Hémoptysie"],
+    [206, "Épanchement pleural liquidien"],
+    [207, "Opacités et masses intra-thoraciques"],
+    [208, "Insuffisance respiratoire chronique chez l'adulte"],
+    [209, "Bronchopneumopathie chronique obstructive"],
+    [210, "Pneumopathie interstitielle diffuse"],
+    [211, "Sarcoïdose"],
+    [309, "Tumeurs du poumon, primitives et secondaires"],
+    [359, "Détresse et insuffisance respiratoire aiguë"],
+    [360, "Pneumothorax"],
+  ],
+  "Hématologie": [
+    [212, "Hémogramme chez l'adulte et l'enfant : indications et interprétation"],
+    [213, "Anémie chez l'adulte et l'enfant"],
+    [214, "Thrombopénie chez l'adulte et l'enfant"],
+    [215, "Purpuras chez l'adulte et l'enfant"],
+    [216, "Syndrome hémorragique d'origine hématologique"],
+    [217, "Syndrome mononucléosique"],
+    [218, "Éosinophilie"],
+    [219, "Pathologie du fer chez l'adulte et l'enfant"],
+    [220, "Adénopathie superficielle de l'adulte et de l'enfant"],
+    [275, "Splénomégalie"],
+    [296, "Agranulocytose médicamenteuse : conduite à tenir"],
+    [315, "Leucémies aiguës"],
+    [316, "Syndromes myélodysplasiques"],
+    [317, "Syndromes myéloprolifératifs"],
+    [318, "Leucémies lymphoïdes chroniques"],
+    [319, "Lymphomes malins"],
+    [320, "Myélome multiple des os"],
+    [329, "Transfusion sanguine et produits dérivés. Hémovigilance"],
+  ],
+  "Cardiologie": [
+    [221, "Athérome : épidémiologie et physiopathologie. Le malade poly-athéromateux"],
+    [222, "Facteurs de risque cardio-vasculaire et prévention"],
+    [223, "Dyslipidémies"],
     [224, "Hypertension artérielle de l'adulte et de l'enfant"],
-    [225, "AOMI, artères viscérales, anévrysmes"], [226, "Thrombose veineuse profonde et embolie pulmonaire"],
-    [227, "Insuffisance veineuse chronique et varices"], [228, "Ulcère de jambe"],
-    [229, "Surveillance et complications des abords veineux"], [230, "Douleur thoracique aiguë"],
-    [231, "Électrocardiogramme : indications et interprétation"], [232, "Fibrillation atriale"],
-    [233, "Valvulopathies"], [234, "Insuffisance cardiaque de l'adulte"], [235, "Péricardite aiguë"],
-    [236, "Troubles de la conduction intracardiaque"], [237, "Palpitations"],
-    [238, "Souffle cardiaque chez l'enfant"], [239, "Acrosyndromes"],
-    [331, "Arrêt cardiorespiratoire"], [332, "État de choc : hypovolémique, septique, cardiogénique, anaphylactique"],
+    [225, "AOMI, artères viscérales, anévrysmes"],
+    [226, "Thrombose veineuse profonde et embolie pulmonaire"],
+    [227, "Insuffisance veineuse chronique et varices"],
+    [228, "Ulcère de jambe"],
+    [229, "Surveillance et complications des abords veineux"],
+    [230, "Douleur thoracique aiguë"],
+    [231, "Électrocardiogramme : indications et interprétations"],
+    [232, "Fibrillation atriale"],
+    [233, "Valvulopathies"],
+    [234, "Insuffisance cardiaque de l'adulte"],
+    [235, "Péricardite aiguë"],
+    [236, "Troubles de la conduction intracardiaque"],
+    [237, "Palpitations"],
+    [239, "Acrosyndromes"],
     [339, "Syndromes coronariens aigus"],
   ],
-  Pneumologie: [
-    [154, "Infections broncho-pulmonaires communautaires de l'adulte et de l'enfant"],
-    [159, "Tuberculose de l'adulte et de l'enfant"], [166, "Grippe"],
-    [188, "Hypersensibilité et allergies respiratoires : asthme, rhinite"],
-    [203, "Dyspnée aiguë et chronique"], [204, "Toux chez l'enfant et l'adulte"], [205, "Hémoptysie"],
-    [206, "Épanchement pleural liquidien"], [207, "Opacités et masses intra-thoraciques"],
-    [208, "Insuffisance respiratoire chronique de l'adulte"],
-    [209, "Bronchopneumopathie chronique obstructive"], [210, "Pneumopathie interstitielle diffuse"],
-    [211, "Sarcoïdose"], [309, "Tumeurs du poumon, primitives et secondaires"],
-    [359, "Détresse et insuffisance respiratoire aiguë"], [360, "Pneumothorax"],
+  "Endocrinologie et nutrition": [
+    [240, "Hypoglycémie chez l'adulte et l'enfant"],
+    [241, "Goitre, nodules thyroïdiens et cancers thyroïdiens"],
+    [242, "Hyperthyroïdie"],
+    [243, "Hypothyroïdie"],
+    [244, "Adénome hypophysaire"],
+    [245, "Insuffisance surrénale chez l'adulte et l'enfant"],
+    [246, "Gynécomastie"],
+    [247, "Diabète sucré de types 1 et 2. Complications"],
+    [248, "Prévention primaire par la nutrition"],
+    [249, "Modifications thérapeutiques du mode de vie"],
+    [250, "Dénutrition chez l'adulte et l'enfant"],
+    [251, "Amaigrissement à tous les âges"],
+    [253, "Obésité de l'enfant et de l'adulte"],
+    [256, "Aptitude au sport ; besoins nutritionnels chez le sportif"],
+    [268, "Hypercalcémie"],
   ],
-  Neuropsy: [
-    [60, "Facteurs de risque, prévention, dépistage des troubles psychiques"],
-    [61, "Bases des classifications des troubles mentaux"], [62, "Organisation de l'offre de soins en psychiatrie"],
-    [63, "Trouble schizophrénique"], [64, "Trouble bipolaire"], [65, "Trouble délirant persistant"],
-    [66, "Trouble dépressif, anxieux, panique, phobique, TOC, PTSD, personnalité"],
-    [67, "Troubles envahissants du développement"], [68, "Troubles du comportement de l'adolescent"],
-    [69, "Troubles psychiques de la grossesse et du post-partum"], [70, "Troubles psychiques du sujet âgé"],
-    [71, "Troubles des conduites alimentaires"], [72, "Troubles à symptomatologie somatique"],
-    [73, "Techniques psychothérapeutiques"], [74, "Prescription et surveillance des psychotropes"],
-    [75, "Addiction au tabac"], [76, "Addiction à l'alcool"], [77, "Addiction aux médicaments psychotropes"],
-    [78, "Addiction au cannabis, cocaïne, amphétamines, opiacés"], [79, "Addictions comportementales"],
-    [91, "Déficit neurologique récent"], [92, "Déficit moteur et/ou sensitif des membres"],
-    [93, "Compression médullaire non traumatique et syndrome de la queue de cheval"],
-    [96, "Neuropathies périphériques"], [97, "Syndrome de Guillain-Barré"], [98, "Myasthénie"],
-    [99, "Migraine, névralgie du trijumeau et algies de la face"],
-    [100, "Céphalée inhabituelle aiguë et chronique"], [101, "Paralysie faciale"], [102, "Diplopie"],
-    [104, "Sclérose en plaques"], [105, "Épilepsie"], [106, "Maladie de Parkinson"],
-    [107, "Mouvements anormaux"], [108, "Confusion, démences"],
-    [109, "Troubles de la marche et de l'équilibre"], [110, "Troubles du sommeil"],
-    [132, "Troubles cognitifs du sujet âgé"], [299, "Tumeurs intracrâniennes"],
-    [336, "Coma non traumatique"], [340, "Accidents vasculaires cérébraux"], [341, "Hémorragie méningée"],
-    [342, "Malaise, perte de connaissance, crise convulsive chez l'adulte"],
-    [343, "État confusionnel et trouble de conscience"], [351, "Agitation et délire aigu"],
-    [352, "Crise d'angoisse aiguë et attaque de panique"], [353, "Risque et conduite suicidaires"],
+  "Néphrologie": [
+    [257, "Œdèmes des membres inférieurs localisés ou généralisés"],
+    [258, "Élévation de la créatininémie"],
+    [259, "Protéinurie et syndrome néphrotique"],
+    [260, "Hématurie"],
+    [261, "Néphropathie glomérulaire"],
+    [262, "Néphropathies interstitielles"],
+    [263, "Néphropathies vasculaires"],
+    [264, "Insuffisance rénale chronique chez l'adulte et l'enfant"],
+    [266, "Polykystose rénale"],
+    [267, "Troubles acido-basiques et désordres hydro-électrolytiques"],
+    [348, "Insuffisance rénale aiguë. Anurie"],
   ],
-  Hématologie: [
-    [212, "Hémogramme : indications et interprétation"], [213, "Anémie chez l'adulte et l'enfant"],
-    [214, "Thrombopénie chez l'adulte et l'enfant"], [215, "Purpuras chez l'adulte et l'enfant"],
-    [216, "Syndrome hémorragique d'origine hématologique"], [217, "Syndrome mononucléosique"],
-    [218, "Éosinophilie"], [219, "Pathologie du fer chez l'adulte et l'enfant"],
-    [220, "Adénopathie superficielle"], [275, "Splénomégalie"],
-    [296, "Agranulocytose médicamenteuse : conduite à tenir"], [315, "Leucémies aiguës"],
-    [316, "Syndromes myélodysplasiques"], [317, "Syndromes myéloprolifératifs"],
-    [318, "Leucémies lymphoïdes chroniques"], [319, "Lymphomes malins"], [320, "Myélome multiple des os"],
-    [329, "Transfusion sanguine et produits dérivés : indications, complications, hémovigilance"],
+  "Urologie": [
+    [50, "Pathologie génito-scrotale chez le garçon et chez l'homme"],
+    [125, "Troubles de la miction et incontinence urinaire de l'adulte et du sujet âgé"],
+    [126, "Trouble de l'érection"],
+    [127, "Hypertrophie bénigne de la prostate"],
+    [161, "Infections urinaires de l'enfant et de l'adulte"],
+    [265, "Lithiase urinaire"],
+    [270, "Douleurs lombaires aiguës chez l'enfant et chez l'adulte"],
+    [310, "Tumeurs de la prostate"],
+    [311, "Tumeurs du rein de l'adulte"],
+    [313, "Tumeurs du testicule"],
+    [314, "Tumeurs vésicales"],
+    [347, "Rétention aiguë d'urine"],
   ],
-  Rhumatologie: [
-    [94, "Rachialgie"], [95, "Radiculalgie et syndrome canalaire"],
-    [128, "Ostéopathies fragilisantes"], [129, "Arthrose"],
-    [156, "Infections ostéo-articulaires de l'enfant et de l'adulte"],
-    [192, "Pathologies auto-immunes : diagnostic et principes de traitement"],
-    [193, "Vascularites systémiques"], [194, "Lupus systémique et syndrome des anti-phospholipides"],
-    [195, "Artérite à cellules géantes"], [196, "Polyarthrite rhumatoïde"], [197, "Spondyloarthrite"],
-    [198, "Arthropathie microcristalline"], [199, "Syndrome douloureux régional complexe"],
-    [200, "Douleur et épanchement articulaire, arthrite d'évolution récente"],
-    [307, "Tumeurs des os primitives et secondaires"],
+  "Hépato-gastro-entérologie et chirurgie digestive": [
+    [269, "Douleurs abdominales aiguës chez l'enfant et chez l'adulte"],
+    [271, "Reflux gastro-œsophagien. Hernie hiatale"],
+    [272, "Ulcère gastrique et duodénal. Gastrite"],
+    [273, "Dysphagie"],
+    [274, "Vomissements du nourrisson, de l'enfant et de l'adulte"],
+    [276, "Hépatomégalie et masse abdominale"],
+    [277, "Lithiase biliaire"],
+    [278, "Ictère"],
+    [279, "Cirrhose et complications"],
+    [280, "Ascite"],
+    [281, "Pancréatite chronique"],
+    [282, "Maladies inflammatoires chroniques de l'intestin"],
+    [283, "Constipation chez l'enfant et l'adulte"],
+    [284, "Colopathie fonctionnelle"],
+    [285, "Diarrhée chronique chez l'adulte et l'enfant"],
+    [287, "Diverticulose colique et diverticulite aiguë du sigmoïde"],
+    [288, "Pathologie hémorroïdaire"],
+    [289, "Hernie pariétale chez l'enfant et l'adulte"],
+    [301, "Tumeurs du colon et du rectum"],
+    [303, "Tumeurs de l'estomac"],
+    [304, "Tumeurs du foie, primitives et secondaires"],
+    [305, "Tumeurs de l'œsophage"],
+    [308, "Tumeurs du pancréas"],
+    [354, "Syndrome occlusif de l'enfant et de l'adulte"],
+    [355, "Hémorragie digestive"],
+    [356, "Appendicite de l'enfant et de l'adulte"],
+    [357, "Péritonite aiguë chez l'enfant et chez l'adulte"],
+    [358, "Pancréatite aiguë"],
+  ],
+  "Cancérologie": [
+    [291, "Cancer : cancérogénèse, oncogénétique"],
+    [292, "Diagnostic des cancers : signes d'appel, stade, pronostic"],
+    [293, "Le médecin préleveur de cellules et de tissus pour examens anatomopathologiques"],
+    [294, "Traitement des cancers : modalités, classes thérapeutiques, complications"],
+    [295, "Prise en charge et accompagnement d'un malade atteint de cancer"],
+  ],
+  "Thérapeutique et pharmacologie": [
+    [321, "Principe du bon usage du médicament"],
+    [322, "La décision thérapeutique personnalisée : bon usage en situation à risque"],
+    [323, "Analyser et utiliser les résultats des études cliniques. Niveaux de preuve"],
+    [324, "Éducation thérapeutique, observance et automédication"],
+    [325, "Risques liés aux médicaments, risque iatrogène, erreur médicamenteuse"],
+    [326, "Cadre réglementaire de la prescription thérapeutique"],
+    [327, "Médecine intégrative, interventions non médicamenteuses et thérapies complémentaires"],
+    [328, "Thérapeutiques non médicamenteuses et dispositifs médicaux"],
+    [330, "Prescription et surveillance des classes de médicaments les plus courantes"],
+  ],
+  "Réanimation et urgences": [
+    [331, "Arrêt cardiorespiratoire"],
+    [332, "État de choc : hypovolémique, septique, cardiogénique, anaphylactique"],
+    [334, "Prise en charge du brûlé et du traumatisé sévère"],
+    [337, "Principales intoxications aiguës"],
+    [338, "Œdème de Quincke et anaphylaxie"],
+  ],
+  "Orthopédie et traumatologie": [
     [361, "Lésions péri-articulaires et ligamentaires du genou, de la cheville et de l'épaule"],
+    [362, "Prothèses et ostéosynthèses"],
     [363, "Fractures fréquentes de l'adulte et du sujet âgé"],
     [365, "Surveillance d'un malade sous plâtre ou résine"],
   ],
-  Endocrinologie: [
-    [49, "Puberté normale et pathologique"],
-    [124, "Ménopause, insuffisance ovarienne prématurée, andropause"],
-    [240, "Hypoglycémie chez l'adulte et l'enfant"], [241, "Goitre, nodules et cancers thyroïdiens"],
-    [242, "Hyperthyroïdie"], [243, "Hypothyroïdie"], [244, "Adénome hypophysaire"],
-    [245, "Insuffisance surrénale chez l'adulte et l'enfant"], [246, "Gynécomastie"],
-    [247, "Diabète sucré de types 1 et 2, complications"],
-    [248, "Prévention primaire par la nutrition"], [249, "Modifications thérapeutiques du mode de vie"],
-    [250, "Dénutrition chez l'adulte et l'enfant"], [251, "Amaigrissement à tous les âges"],
-    [252, "Troubles nutritionnels chez le sujet âgé"], [253, "Obésité de l'enfant et de l'adulte"],
-    [255, "Diabète gestationnel"], [268, "Hypercalcémie"],
-  ],
-  Gynécologie: [
-    [23, "Grossesse normale"], [24, "Principales complications de la grossesse"],
-    [25, "Grossesse extra-utérine"], [26, "Douleur abdominale aiguë chez une femme enceinte"],
-    [27, "Prévention des risques fœtaux : infection, médicaments, toxiques, irradiation"],
-    [28, "Infection urinaire au cours de la grossesse"],
-    [30, "Prématurité et retard de croissance intra-utérin"],
-    [31, "Accouchement, délivrance et suites de couches normales"], [33, "Allaitement maternel"],
-    [34, "Suites de couches pathologiques"], [35, "Anomalies du cycle menstruel et métrorragies"],
-    [36, "Contraception"], [37, "Interruption volontaire de grossesse"],
-    [38, "Infertilité du couple : première consultation"], [39, "Assistance médicale à la procréation"],
-    [40, "Algies pelviennes chez la femme"], [41, "Endométriose"], [42, "Aménorrhée"],
-    [43, "Hémorragie génitale chez la femme"], [44, "Tuméfaction pelvienne chez la femme"],
-    [162, "Infections sexuellement transmissibles"],
-    [300, "Tumeurs du col utérin et du corps utérin"], [306, "Tumeurs de l'ovaire"],
-    [312, "Tumeurs du sein"], [344, "Prééclampsie"],
-  ],
-  Pédiatrie: [
-    [32, "Évaluation et soins du nouveau-né à terme"],
-    [47, "Suivi d'un nourrisson, d'un enfant et d'un adolescent normal"],
-    [48, "Alimentation et besoins nutritionnels du nourrisson et de l'enfant"],
-    [50, "Pathologie génito-scrotale chez le garçon"], [51, "Troubles de la miction chez l'enfant"],
-    [52, "Strabisme et amblyopie de l'enfant"], [53, "Retard de croissance staturo-pondérale"],
-    [54, "Boiterie chez l'enfant"], [55, "Développement psychomoteur du nourrisson et de l'enfant"],
-    [56, "L'enfant handicapé"], [57, "Maltraitance, enfants en danger, PMI"],
-    [137, "Douleur chez l'enfant : évaluation et traitements antalgiques"], [163, "Coqueluche"],
-    [164, "Exanthèmes fébriles de l'enfant"], [165, "Oreillons"],
-    [286, "Diarrhée aiguë et déshydratation du nourrisson et de l'enfant"],
-    [297, "Cancer de l'enfant : particularités"],
-    [345, "Malaise grave du nourrisson et mort inattendue du nourrisson"],
-    [346, "Convulsions chez le nourrisson et chez l'enfant"], [364, "Fractures chez l'enfant"],
-  ],
-  ORL: [
-    [87, "Épistaxis"], [88, "Trouble aigu de la parole et dysphonie"],
-    [89, "Altération de la fonction auditive"], [90, "Pathologie des glandes salivaires"],
-    [103, "Vertige"], [148, "Infections naso-sinusiennes de l'adulte et de l'enfant"],
-    [149, "Angines et rhinopharyngites"], [150, "Otites infectieuses de l'adulte et de l'enfant"],
-    [298, "Tumeurs de la cavité buccale, du cavum et des VADS"],
-    [335, "Traumatisme maxillo-facial et oculaire"],
-  ],
 };
 
-const VERSION = "v43";
+const VERSION = "v46";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -252,16 +540,32 @@ const NIV = [
 ];
 
 const PALETTE = {
-  Cardiologie: { fg: "#F09A93", bg: "#33201E" },
-  Pneumologie: { fg: "#86C6EC", bg: "#15303F" },
-  Neuropsy: { fg: "#B9A3EE", bg: "#251F45" },
-  Hématologie: { fg: "#EE9BBF", bg: "#331A28" },
-  Rhumatologie: { fg: "#E5C177", bg: "#2E2718" },
-  Endocrinologie: { fg: "#6ECBAB", bg: "#14302A" },
-  Gynécologie: { fg: "#F0A0BF", bg: "#331E29" },
-  Pédiatrie: { fg: "#EEB061", bg: "#33261A" },
-  ORL: { fg: "#9AD183", bg: "#1D2E1A" },
+  "Santé publique et médecine légale": { fg: "#9FB6C9", bg: "#1B2733" },
+  "Gynécologie-obstétrique": { fg: "#F0A0BF", bg: "#331E29" },
+  "Pédiatrie": { fg: "#EEB061", bg: "#33261A" },
+  "Psychiatrie et addictologie": { fg: "#B9A3EE", bg: "#251F45" },
+  "Ophtalmologie": { fg: "#7FD8D0", bg: "#12302E" },
+  "ORL et chirurgie maxillo-faciale": { fg: "#9AD183", bg: "#1D2E1A" },
+  "Neurologie": { fg: "#A78BF0", bg: "#221B3D" },
+  "Dermatologie": { fg: "#F0A98C", bg: "#33211A" },
+  "Gériatrie et médecine physique": { fg: "#C2B49A", bg: "#2B2620" },
+  "Douleur et soins palliatifs": { fg: "#B0C4DE", bg: "#1E2734" },
+  "Maladies infectieuses": { fg: "#7FD69B", bg: "#14301F" },
+  "Immunologie et médecine interne": { fg: "#E0A3D8", bg: "#2E1F2C" },
+  "Rhumatologie": { fg: "#E5C177", bg: "#2E2718" },
+  "Pneumologie": { fg: "#86C6EC", bg: "#15303F" },
+  "Hématologie": { fg: "#EE9BBF", bg: "#331A28" },
+  "Cardiologie": { fg: "#F09A93", bg: "#33201E" },
+  "Endocrinologie et nutrition": { fg: "#6ECBAB", bg: "#14302A" },
+  "Néphrologie": { fg: "#8FB8F0", bg: "#1A2740" },
+  "Urologie": { fg: "#7FC4D9", bg: "#152B33" },
+  "Hépato-gastro-entérologie et chirurgie digestive": { fg: "#DCC06E", bg: "#2F2A16" },
+  "Cancérologie": { fg: "#D89AE0", bg: "#2C1E33" },
+  "Thérapeutique et pharmacologie": { fg: "#A8BED2", bg: "#1E2933" },
+  "Réanimation et urgences": { fg: "#F08A6A", bg: "#331B14" },
+  "Orthopédie et traumatologie": { fg: "#C7B08A", bg: "#2C261C" },
 };
+
 const pal = (nom) => PALETTE[nom] || { fg: "#6ECBAB", bg: "#1E3149" };
 
 /* mélange deux couleurs hexadécimales, t entre 0 et 1 */
@@ -2143,6 +2447,14 @@ function JourneeAccueil({ taches, onMaj, items, colleges, onOuvrirItem, onPlanni
 }
 
 /* ================== appel direct à l'IA ================== */
+const CLE_LISA = "edngo-lisa";
+const LISA_DEFAUT = "https://livret.uness.fr/lisa/2025/Item_de_connaissance_{n}";
+const litLisa = () => { try { return localStorage.getItem(CLE_LISA) || LISA_DEFAUT; } catch (e) { return LISA_DEFAUT; } };
+const ecritLisa = (v) => { try { localStorage.setItem(CLE_LISA, v || LISA_DEFAUT); } catch (e) {} };
+const lienLisa = (item) => litLisa()
+  .replace("{n}", item.numero)
+  .replace("{titre}", encodeURIComponent(item.titre));
+
 const CLE_API = "edngo-cle";
 const litCle = () => { try { return localStorage.getItem(CLE_API) || ""; } catch (e) { return ""; } };
 const ecritCle = (v) => { try { v ? localStorage.setItem(CLE_API, v) : localStorage.removeItem(CLE_API); } catch (e) {} };
@@ -2177,7 +2489,19 @@ function extraireJson(txt) {
 
 const CONSIGNE = `Tu es enseignant de médecine et tu prépares des étudiants aux EDN en France.
 Base-toi uniquement sur les référentiels des Collèges nationaux et les recommandations françaises en vigueur.
-N'invente jamais un chiffre, un seuil ou une posologie dont tu ne sois pas certain.
+
+Équilibre des questions : au moins un tiers doivent porter sur la thérapeutique —
+indications et contre-indications, choix de la molécule ou de la classe, ordre des lignes
+de traitement, surveillance du traitement, effets indésirables, interactions, situations
+particulières (grossesse, allaitement, insuffisance rénale ou hépatique, sujet âgé).
+Le reste couvre diagnostic, examens complémentaires et raisonnement clinique.
+
+Interroge sur les principes thérapeutiques et les classes plutôt que sur des posologies
+chiffrées. N'invente jamais un chiffre, un seuil ou une posologie dont tu ne sois pas certain :
+en cas de doute, ne pose pas la question.
+
+Varie l'ordre des propositions : ne place pas les réponses vraies en premier.
+
 Réponds uniquement par du JSON valide, sans aucun texte autour, sans balises de code.`;
 
 /* ================== le Rattrapage ================== */
@@ -4573,7 +4897,8 @@ function VueItem({ item, college, score, cartes, qcms, annales, resultats, onRes
   const [volet, setVolet] = useState("resume");
   const [edition, setEdition] = useState(false);
   const [genreIA, setGenreIA] = useState("qcm");
-  const lisa = `https://livret.uness.fr/lisa/2025/Sp%C3%A9cial:Recherche?search=${encodeURIComponent(item.titre)}`;
+  const [reglageLisa, setReglageLisa] = useState(false);
+  const [modeleLisa, setModeleLisa] = useState(litLisa());
   const onglets = [["resume", "Résumé"], ["flash", `Flashcards${cartes.length ? " · " + cartes.length : ""}`],
   ["qcm", `QCM${qcms.length ? " · " + qcms.length : ""}`], ["fiches", `Fiches${nbFiches ? " · " + nbFiches : ""}`], ["ia", "IA"],
   ["annales", `Annales${annales.length ? " · " + annales.length : ""}`], ["progression", "Progression"]];
@@ -4587,11 +4912,39 @@ function VueItem({ item, college, score, cartes, qcms, annales, resultats, onRes
           {college.nom.toUpperCase()} · ITEM {item.numero}
         </p>
         <h2 style={{ fontFamily: serif, fontSize: 24, lineHeight: 1.25 }}>{item.titre}</h2>
-        <a href={lisa} target="_blank" rel="noreferrer"
-          className="inline-block mt-3 px-4 py-2 text-xs doux"
-          style={{ background: "rgba(255,255,255,0.12)", color: pal(college.nom).fg, borderRadius: 999, fontWeight: 700 }}>
-          Voir la fiche LiSA sur uness.fr ↗
-        </a>
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <a href={lienLisa(item)} target="_blank" rel="noreferrer" className="px-4 py-2 text-xs doux"
+            style={{ background: "rgba(255,255,255,0.14)", color: pal(college.nom).fg, borderRadius: 999, fontWeight: 700 }}>
+            Fiche LiSA — item {item.numero} ↗
+          </a>
+          <a href={`https://livret.uness.fr/lisa/2025/index.php?search=${encodeURIComponent(item.titre)}`}
+            target="_blank" rel="noreferrer" className="px-3 py-2 text-xs doux"
+            style={{ background: "rgba(255,255,255,0.08)", color: pal(college.nom).fg, borderRadius: 999 }}>
+            Rechercher
+          </a>
+          <button onClick={() => setReglageLisa(!reglageLisa)} className="text-xs px-2"
+            style={{ color: pal(college.nom).fg, opacity: 0.7 }}>réglage</button>
+        </div>
+
+        {reglageLisa && (
+          <div className="mt-3 vue" style={{ background: "rgba(0,0,0,0.25)", borderRadius: 14, padding: "12px 14px" }}>
+            <p className="text-xs mb-2" style={{ color: pal(college.nom).fg, opacity: 0.85, lineHeight: 1.6 }}>
+              Adresse d'une fiche LiSA. Écris <b>{"{n}"}</b> à la place du numéro d'item.
+              Le réglage vaut pour les 367 items. Copie l'adresse d'une fiche que tu as ouverte pour l'ajuster.
+            </p>
+            <input value={modeleLisa} onChange={(e) => { setModeleLisa(e.target.value); ecritLisa(e.target.value); }}
+              className="w-full px-3 py-2 text-xs mb-2"
+              style={{ borderRadius: 12, border: `1px solid ${T.line}`, background: T.card }} />
+            <div className="flex gap-2">
+              <button onClick={() => { setModeleLisa(LISA_DEFAUT); ecritLisa(LISA_DEFAUT); }}
+                className="text-xs px-3 py-1.5" style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2 }}>
+                Rétablir le modèle
+              </button>
+              <button onClick={() => setReglageLisa(false)} className="text-xs px-3 py-1.5"
+                style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 600 }}>Fermer</button>
+            </div>
+          </div>
+        )}
       </div>
       <div className="flex gap-2 mb-3">
         {NIV.slice(1).map((n, k) => {
