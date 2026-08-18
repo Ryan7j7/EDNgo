@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v46";
+const VERSION = "v47";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -3385,28 +3385,68 @@ function App() {
     })();
   }, []);
 
-  /* complète le catalogue si des items officiels manquent dans les données sauvegardées */
+  /* Aligne les données sauvegardées sur le catalogue officiel : renomme les
+     anciens collèges, réaffecte chaque item à son collège, fusionne les
+     doublons de numéro en conservant les QCM, fiches et résultats liés. */
   useEffect(() => {
     if (!pret) return;
-    const parNom = {}; colleges.forEach((c) => (parNom[c.nom] = c));
-    const colsAjoutes = [];
+
+    /* collège officiel de chaque numéro d'item */
+    const collegeDe = {};
+    Object.entries(CATALOGUE).forEach(([nom, liste]) =>
+      liste.forEach(([numero]) => (collegeDe[numero] = nom)));
+    const titreDe = {};
+    Object.values(CATALOGUE).forEach((liste) =>
+      liste.forEach(([numero, titre]) => (titreDe[numero] = titre)));
+
+    /* un collège par nom officiel, en réutilisant ceux qui existent déjà */
+    const parNom = {};
+    colleges.forEach((c) => { if (!parNom[c.nom]) parNom[c.nom] = c; });
+    const cols = [];
     Object.keys(CATALOGUE).forEach((nom) => {
-      if (!parNom[nom]) { const c = { id: uid(), nom, resume: "" }; colsAjoutes.push(c); parNom[nom] = c; }
+      cols.push(parNom[nom] || { id: uid(), nom, resume: "" });
     });
-    const itemsAjoutes = [];
-    Object.entries(CATALOGUE).forEach(([nom, liste]) => {
-      const cid = parNom[nom].id;
-      liste.forEach(([numero, titre]) => {
-        if (!items.some((i) => i.collegeId === cid && i.numero === numero)) {
-          itemsAjoutes.push({ id: uid(), collegeId: cid, numero, titre, resume: "", tours: [], niveau: 0 });
-        }
-      });
+    const idDe = {};
+    cols.forEach((c) => (idDe[c.nom] = c.id));
+
+    /* un seul item par numéro : on garde celui qui porte des données */
+    const poids = (i) => (i.comp || 0) * 100 + (i.tours || []).length * 10
+      + (i.resume ? 5 : 0) + (i.note ? 3 : 0);
+    const gardes = {};
+    const remplace = {};
+    [...items].sort((a, b) => poids(b) - poids(a)).forEach((i) => {
+      if (gardes[i.numero]) { remplace[i.id] = gardes[i.numero].id; return; }
+      gardes[i.numero] = i;
     });
-    if (colsAjoutes.length) setColleges((l) => [...l, ...colsAjoutes]);
-    if (itemsAjoutes.length) {
-      setItems((l) => [...l, ...itemsAjoutes]);
-      setAlerte(`${itemsAjoutes.length} item(s) manquant(s) ajouté(s) au programme.`);
+
+    const nouveauxItems = Object.keys(collegeDe).map((n) => {
+      const num = Number(n);
+      const ancien = gardes[num];
+      return ancien
+        ? { ...ancien, numero: num, titre: titreDe[num], collegeId: idDe[collegeDe[num]] }
+        : { id: uid(), collegeId: idDe[collegeDe[num]], numero: num, titre: titreDe[num],
+            resume: "", tours: [], comp: 0 };
+    }).sort((a, b) => a.numero - b.numero);
+
+    /* les contenus suivent l'item conservé */
+    const suit = (l) => l.map((x) => (x.itemId && remplace[x.itemId] ? { ...x, itemId: remplace[x.itemId] } : x));
+
+    const colsSupprimes = colleges.length - cols.length;
+    const itemsFusionnes = Object.keys(remplace).length;
+    const itemsAjoutes = nouveauxItems.length - Object.keys(gardes).length + itemsFusionnes;
+
+    if (itemsFusionnes) {
+      setQcms(suit); setCartes(suit); setAnnales(suit);
+      setResultats(suit); setErreurs(suit); setTaches(suit); setFiches(suit);
     }
+    if (colsSupprimes !== 0 || cols.some((c, k) => c !== colleges[k])) setColleges(cols);
+    setItems(nouveauxItems);
+
+    const msg = [];
+    if (itemsAjoutes > 0) msg.push(`${itemsAjoutes} item(s) ajouté(s)`);
+    if (itemsFusionnes) msg.push(`${itemsFusionnes} doublon(s) fusionné(s)`);
+    if (colsSupprimes > 0) msg.push(`${colsSupprimes} collège(s) en double supprimé(s)`);
+    if (msg.length) setAlerte("Programme mis à jour : " + msg.join(", ") + ". Tes QCM et fiches ont suivi.");
   }, [pret]);
 
   useEffect(() => {
