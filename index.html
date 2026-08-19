@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v47";
+const VERSION = "v48";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1119,14 +1119,15 @@ const clair = (c) => {
 
 function Toile({ traces, onTraces }) {
   const [couleur, setCouleur] = useState(COULEURS_STYLO[0]);
-  useEffect(() => {
-    setCouleur((c) => (c === "#E2ECF6" || c === "#16202B") ? (clair(fond) ? "#16202B" : "#E2ECF6") : c);
-  }, [fond]);
   const [taille, setTaille] = useState(3);
   const [gomme, setGomme] = useState(false);
   const [plein, setPlein] = useState(false);
   const [zoomPct, setZoomPct] = useState(100);
   const [fond, setFond] = useState("#12243A");
+  /* l'encre bascule automatiquement quand le fond passe du sombre au clair */
+  useEffect(() => {
+    setCouleur((c) => (c === "#E2ECF6" || c === "#16202B") ? (clair(fond) ? "#16202B" : "#E2ECF6") : c);
+  }, [fond]);
   const [trame, setTrame] = useState("vierge");
 
   const svg = useRef(null);
@@ -1887,12 +1888,12 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
           <span className="text-xs flex-1" style={{ color: NIV[2].encre, fontWeight: 600 }}>
             {corbeille.length} élément(s) effacé(s)
           </span>
-          <button onClick={() => { onMaj([...taches, ...corbeille]); setCorbeille(null); }}
+          <button onClick={() => { onMaj([...taches, ...(corbeille || [])]); setCorbeille([]); }}
             className="px-4 py-1.5 text-xs doux"
             style={{ background: NIV[2].encre, color: "#241A03", borderRadius: 999, fontWeight: 800 }}>
             ↺ Annuler
           </button>
-          <button onClick={() => setCorbeille(null)} className="text-xs px-1" style={{ color: NIV[2].encre }}>✕</button>
+          <button onClick={() => setCorbeille([])} className="text-xs px-1" style={{ color: NIV[2].encre }}>✕</button>
         </div>
       )}
 
@@ -1957,12 +1958,12 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
         </div>
       )}
 
-      {corbeille.length > 0 && (
+      {(corbeille || []).length > 0 && (
         <div className="flex items-center gap-3 mb-3 px-4 py-2.5 vue" style={{ background: T.accent, borderRadius: 14 }}>
           <span className="text-xs flex-1" style={{ color: "#fff", fontWeight: 600 }}>
-            {corbeille.length} créneau(x) effacé(s)
+            {(corbeille || []).length} créneau(x) effacé(s)
           </span>
-          <button onClick={() => { onMaj([...taches, ...corbeille]); setCorbeille([]); }}
+          <button onClick={() => { onMaj([...taches, ...(corbeille || [])]); setCorbeille([]); }}
             className="text-xs px-3 py-1 doux"
             style={{ background: "rgba(255,255,255,0.24)", color: "#fff", borderRadius: 999, fontWeight: 700 }}>Rétablir</button>
           <button onClick={() => setCorbeille([])} className="text-xs" style={{ color: "#fff" }}>✕</button>
@@ -5289,7 +5290,7 @@ function Flashcards({ cartes, onAjouter, onSupprimer, onNoter, resume, onIA }) {
     <div>
       <div className="flex gap-2 mb-4">
         <button onClick={() => setMode("creer")} className="px-4 py-2.5 text-sm doux" style={{ background: T.accent, color: "#fff", borderRadius: 999, fontWeight: 600 }}>Nouvelle carte</button>
-        {cartes.length > 0 && <button onClick={demarrer} className="px-4 py-2.5 text-sm doux" style={{ border: `1px solid ${T.line}`, borderRadius: 999, fontWeight: 600, color: T.ink }}>Réviser</button>}
+        {cartes.length > 0 && <button onClick={() => { setN(0); setFace(false); setMode("reviser"); }} className="px-4 py-2.5 text-sm doux" style={{ border: `1px solid ${T.line}`, borderRadius: 999, fontWeight: 600, color: T.ink }}>Réviser</button>}
         {onIA && <button onClick={() => onIA("flash")} className="px-4 py-2.5 text-sm doux"
           style={{ background: T.accentPale, color: T.accent, borderRadius: 999, fontWeight: 600 }}>Générer</button>}
       </div>
