@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v49";
+const VERSION = "v52";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -486,6 +486,8 @@ const ONGLETS = [
   ["cours",     "Cours",     "✦", "ECG, radio",         "#E8A0C4", "#241320"],
   ["cards",     "My Cards",  "✎", "Mes fiches",         "#8DD16A", "#111F0E"],
   ["ai",        "My AI",     "✳", "Poser une question", "#7C9BF0", "#101529"],
+  ["stats",     "Statistiques", "◫", "Temps et volume", "#8DD16A", "#111F0E"],
+  ["horloge",   "Horloge",   "◷", "Minuteur, chrono",   "#7C9BF0", "#101529"],
   ["resultats", "Résultats", "◔", "Mes scores",         "#EFC94C", "#211D0C"],
   ["erreurs",   "Erreurs",   "!", "Mon brouillon",      "#F08A6A", "#241510"],
 ];
@@ -1132,6 +1134,7 @@ function Toile({ traces, onTraces }) {
 
   const svg = useRef(null);
   const encours = useRef(null);      // élément <path> du trait en cours
+  const attente = useRef(0);         // image écran en attente de tracé
   const trait = useRef(null);        // points du trait en cours
   const vue = useRef({ x: 0, y: 0, w: 1000, h: 700 });
   const doigts = useRef(new Map());
@@ -1143,7 +1146,13 @@ function Toile({ traces, onTraces }) {
 
   const appliquerVue = () => {
     const v = vue.current;
-    if (svg.current) svg.current.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
+    if (svg.current) {
+      /* la hauteur du repère suit la forme réelle de l'élément : sans cela le
+         tracé s'écarte de la pointe dès que la fenêtre change de proportions */
+      const r = svg.current.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) v.h = v.w * (r.height / r.width);
+      svg.current.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
+    }
     const fond = svg.current && svg.current.querySelector("#fond");
     if (fond) {
       fond.setAttribute("x", v.x - v.w); fond.setAttribute("y", v.y - v.h);
@@ -1152,8 +1161,21 @@ function Toile({ traces, onTraces }) {
     setZoomPct(Math.round((1000 / v.w) * 100));
   };
 
+  /* Conversion écran → repère du dessin. On passe par la matrice réelle du SVG :
+     le calcul par simple règle de trois se décalait dès que le rapport largeur
+     sur hauteur de l'élément différait de celui du viewBox. */
   const monde = (cx, cy) => {
-    const r = svg.current.getBoundingClientRect();
+    const el = svg.current;
+    if (el && el.getScreenCTM) {
+      const m = el.getScreenCTM();
+      if (m) {
+        const p = el.createSVGPoint();
+        p.x = cx; p.y = cy;
+        const q = p.matrixTransform(m.inverse());
+        return [q.x, q.y];
+      }
+    }
+    const r = el.getBoundingClientRect();
     const v = vue.current;
     return [v.x + ((cx - r.left) / r.width) * v.w, v.y + ((cy - r.top) / r.height) * v.h];
   };
@@ -1167,7 +1189,19 @@ function Toile({ traces, onTraces }) {
     appliquerVue();
   };
 
-  const chemin = (pts) => pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  /* Courbe lissée : chaque segment passe par le milieu de deux points, ce qui
+     supprime l'aspect anguleux des lignes brisées sans décaler le tracé. */
+  const chemin = (pts) => {
+    if (!pts.length) return "";
+    if (pts.length < 3) return pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
+    let d = `M${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+      d += ` Q${x1.toFixed(2)} ${y1.toFixed(2)} ${((x1 + x2) / 2).toFixed(2)} ${((y1 + y2) / 2).toFixed(2)}`;
+    }
+    const [xf, yf] = pts[pts.length - 1];
+    return d + ` L${xf.toFixed(2)} ${yf.toFixed(2)}`;
+  };
 
   const effacer = (x, y) => {
     const { traces: tr, onTraces: maj } = cfg.current;
@@ -1237,7 +1271,13 @@ function Toile({ traces, onTraces }) {
       e.preventDefault();
       const evts = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
       evts.forEach((ev) => trait.current.pts.push(monde(ev.clientX, ev.clientY)));
-      if (encours.current) encours.current.setAttribute("d", chemin(trait.current.pts));
+      /* on ne redessine qu'une fois par rafraîchissement d'écran */
+      if (!attente.current) {
+        attente.current = requestAnimationFrame(() => {
+          attente.current = 0;
+          if (encours.current && trait.current) encours.current.setAttribute("d", chemin(trait.current.pts));
+        });
+      }
     };
 
     const haut = (e) => {
@@ -1246,6 +1286,7 @@ function Toile({ traces, onTraces }) {
         if (doigts.current.size < 2) geste.current = null;
         return;
       }
+      if (attente.current) { cancelAnimationFrame(attente.current); attente.current = 0; }
       const t = trait.current;
       trait.current = null;
       if (encours.current) { encours.current.remove(); encours.current = null; }
@@ -1286,6 +1327,12 @@ function Toile({ traces, onTraces }) {
   }, []);
 
   useEffect(() => { appliquerVue(); }, [plein]);
+  useEffect(() => {
+    const r = () => appliquerVue();
+    window.addEventListener("resize", r);
+    window.addEventListener("orientationchange", r);
+    return () => { window.removeEventListener("resize", r); window.removeEventListener("orientationchange", r); };
+  }, []);
 
   const cadrer = () => {
     const pts = traces.filter((t) => t && t.pts).flatMap((t) => t.pts);
@@ -1351,9 +1398,10 @@ function Toile({ traces, onTraces }) {
   );
 
   const dessin = (
-    <svg ref={svg} viewBox="0 0 1000 700" width="100%"
+    <svg ref={svg} viewBox="0 0 1000 700" width="100%" preserveAspectRatio="none"
       style={{
         background: fond, borderRadius: plein ? 12 : 18, border: plein ? "none" : `1px solid ${T.line}`,
+        shapeRendering: "geometricPrecision",
         touchAction: "none", WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none",
         display: "block", height: plein ? "calc(100vh - 76px)" : "auto", aspectRatio: plein ? "auto" : "10 / 7",
       }}>
@@ -2619,7 +2667,11 @@ Interroge sur les principes thérapeutiques et les classes plutôt que sur des p
 chiffrées. N'invente jamais un chiffre, un seuil ou une posologie dont tu ne sois pas certain :
 en cas de doute, ne pose pas la question.
 
-Varie l'ordre des propositions : ne place pas les réponses vraies en premier.
+Varie le NOMBRE de réponses vraies d'une question à l'autre : sur un lot de dix QCM,
+vise environ deux questions à une seule bonne réponse, trois à deux, trois à trois et
+deux à quatre. Ne produis jamais une série où presque toutes les questions ont quatre
+bonnes réponses sur cinq : l'étudiant apprendrait à cocher tout sauf l'intrus.
+Varie aussi l'ordre des propositions : ne place pas les réponses vraies en premier.
 
 Réponds uniquement par du JSON valide, sans aucun texte autour, sans balises de code.`;
 
@@ -2884,6 +2936,441 @@ function SessionDossier({ dossier, onNoter, onFin }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ================== horloge ================== */
+const CLE_CHRONO = "edngo-chrono";
+
+/* Un volet par chiffre : le nouveau chiffre bascule par-dessus l'ancien,
+   comme sur un afficheur mécanique. */
+function Volet({ valeur }) {
+  const [affiche, setAffiche] = useState(valeur);
+  const [sortant, setSortant] = useState(null);
+
+  useEffect(() => {
+    if (valeur === affiche) return;
+    setSortant(affiche);
+    setAffiche(valeur);
+    const t = setTimeout(() => setSortant(null), 420);
+    return () => clearTimeout(t);
+  }, [valeur]);
+
+  const base = {
+    position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+    fontFamily: serif, fontWeight: 700, color: T.ink, background: "#17293E",
+    borderRadius: 14, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
+  };
+
+  return (
+    <span style={{
+      position: "relative", display: "inline-block", width: "1.05em", height: "1.5em",
+      perspective: 400, margin: "0 2px",
+    }}>
+      {sortant !== null && (
+        <span style={{ ...base, animation: "voletSort 420ms cubic-bezier(0.4,0,0.6,1) forwards", zIndex: 2 }}>
+          {sortant}
+        </span>
+      )}
+      <span style={{ ...base, animation: sortant !== null ? "voletEntre 420ms cubic-bezier(0.4,0,0.6,1)" : "none" }}>
+        {affiche}
+      </span>
+      <span style={{
+        position: "absolute", left: 4, right: 4, top: "50%", height: 1,
+        background: "rgba(0,0,0,0.35)", zIndex: 3, pointerEvents: "none",
+      }} />
+    </span>
+  );
+}
+
+function Afficheur({ texte, taille }) {
+  return (
+    <div className="flex items-center justify-center" style={{ fontSize: taille, lineHeight: 1 }}>
+      {texte.split("").map((c, i) =>
+        c === ":"
+          ? <span key={i} style={{ color: T.ink2, margin: "0 4px", fontFamily: serif, fontWeight: 700 }}>:</span>
+          : <Volet key={i} valeur={c} />
+      )}
+    </div>
+  );
+}
+
+function Horloge() {
+  const [duree, setDuree] = useState(120 * 60);
+  const [reste, setReste] = useState(120 * 60);
+  const [marche, setMarche] = useState(false);
+  const [plein, setPlein] = useState(false);
+  const [mode, setMode] = useState("minuteur");
+  const [ecoule, setEcoule] = useState(0);
+  const [perso, setPerso] = useState("");
+  const [tours, setTours] = useState([]);
+  const tic = useRef(null);
+
+  useEffect(() => {
+    try {
+      const d = JSON.parse(localStorage.getItem(CLE_CHRONO) || "null");
+      if (d && d.fin && d.fin > Date.now()) {
+        setDuree(d.duree); setReste(Math.round((d.fin - Date.now()) / 1000)); setMarche(true);
+      }
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    if (!marche) return;
+    tic.current = setInterval(() => {
+      if (mode === "minuteur") {
+        setReste((r) => {
+          if (r <= 1) { setMarche(false); try { localStorage.removeItem(CLE_CHRONO); } catch (e) {} return 0; }
+          return r - 1;
+        });
+      } else setEcoule((e) => e + 1);
+    }, 1000);
+    return () => clearInterval(tic.current);
+  }, [marche, mode]);
+
+  const lancer = () => {
+    if (mode === "minuteur") {
+      try { localStorage.setItem(CLE_CHRONO, JSON.stringify({ duree, fin: Date.now() + reste * 1000 })); } catch (e) {}
+    }
+    setMarche(true);
+  };
+  const pause = () => { setMarche(false); try { localStorage.removeItem(CLE_CHRONO); } catch (e) {} };
+  const remettre = () => { pause(); setReste(duree); setEcoule(0); setTours([]); };
+  const choisir = (s) => { pause(); setDuree(s); setReste(s); };
+
+  const v = mode === "minuteur" ? reste : ecoule;
+  const hh = Math.floor(v / 3600), mm = Math.floor((v % 3600) / 60), ss = v % 60;
+  const texte = hh > 0
+    ? `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
+    : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  const part = mode === "minuteur" && duree ? reste / duree : 0;
+  const fini = mode === "minuteur" && reste === 0;
+
+  const Boutons = ({ grand }) => (
+    <div className="flex items-center gap-3">
+      <button onClick={marche ? pause : lancer} className="doux"
+        style={{ background: marche ? T.card : T.accent, color: marche ? T.ink : "#fff",
+          borderRadius: 999, fontWeight: 700, fontSize: grand ? 17 : 15,
+          padding: grand ? "16px 44px" : "13px 32px", border: `1px solid ${marche ? T.line : T.accent}` }}>
+        {marche ? "Pause" : reste === duree && !ecoule ? "Démarrer" : "Reprendre"}
+      </button>
+      {mode === "chrono" && marche && (
+        <button onClick={() => setTours((l) => [ecoule, ...l].slice(0, 12))} className="doux"
+          style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2, fontWeight: 600,
+            padding: grand ? "16px 26px" : "13px 20px" }}>Tour</button>
+      )}
+      <button onClick={remettre} className="doux"
+        style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2, fontWeight: 600,
+          padding: grand ? "16px 26px" : "13px 20px" }}>Zéro</button>
+    </div>
+  );
+
+  if (plein) {
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 70, background: T.paper,
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 30 }}>
+        <div style={{ width: "min(78vw, 520px)" }}>
+          <div className="h-1.5 rounded-full mb-8" style={{ background: "#1E3149" }}>
+            <div className="h-1.5 rounded-full" style={{ width: part * 100 + "%",
+              background: fini ? T.bas : T.accent, transition: "width 900ms linear" }} />
+          </div>
+        </div>
+        <Afficheur texte={texte} taille="clamp(58px, 15vw, 132px)" />
+        <p className="text-sm" style={{ color: fini ? T.bas : T.ink2, fontWeight: 700, letterSpacing: "0.14em" }}>
+          {fini ? "TEMPS ÉCOULÉ" : mode === "minuteur" ? "MINUTEUR" : "CHRONOMÈTRE"}
+        </p>
+        <Boutons grand />
+        <button onClick={() => setPlein(false)} className="text-sm" style={{ color: T.ink2 }}>Réduire</button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="mb-1" style={{ fontFamily: serif, fontSize: 26 }}>Horloge</h2>
+      <p className="text-xs mb-5" style={{ color: T.ink2 }}>
+        Le décompte continue si tu changes d'onglet ou si tu fermes la page.
+      </p>
+
+      <div className="flex gap-2 mb-4">
+        {[["minuteur", "Minuteur"], ["chrono", "Chronomètre"]].map(([x, l]) => (
+          <button key={x} onClick={() => { pause(); setMode(x); setEcoule(0); setReste(duree); setTours([]); }}
+            className="flex-1 py-3 doux"
+            style={{ borderRadius: 999, fontWeight: 700,
+              background: mode === x ? T.accent : T.accentPale, color: mode === x ? "#fff" : T.accent }}>{l}</button>
+        ))}
+      </div>
+
+      <div className="ombre flex flex-col items-center gap-6"
+        style={{ background: T.card, borderRadius: 26, padding: "30px 20px 26px" }}>
+        {mode === "minuteur" && (
+          <div className="w-full h-1.5 rounded-full" style={{ background: "#1E3149" }}>
+            <div className="h-1.5 rounded-full" style={{ width: part * 100 + "%",
+              background: fini ? T.bas : T.accent, transition: "width 900ms linear" }} />
+          </div>
+        )}
+        <Afficheur texte={texte} taille="clamp(46px, 12vw, 86px)" />
+        <Boutons />
+        <button onClick={() => setPlein(true)} className="text-xs px-5 py-2 doux"
+          style={{ borderRadius: 999, background: T.accentPale, color: T.accent, fontWeight: 700 }}>
+          Plein écran
+        </button>
+      </div>
+
+      {mode === "chrono" && tours.length > 0 && (
+        <div className="ombre mt-4" style={{ background: T.card, borderRadius: 20, padding: "14px 16px" }}>
+          <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Tours</p>
+          {tours.map((t, k) => (
+            <div key={k} className="flex justify-between text-sm py-1.5"
+              style={{ borderBottom: k < tours.length - 1 ? `1px solid ${T.line}` : "none" }}>
+              <span style={{ color: T.ink2 }}>Tour {tours.length - k}</span>
+              <span style={{ fontWeight: 700 }}>
+                {String(Math.floor(t / 60)).padStart(2, "0")}:{String(t % 60).padStart(2, "0")}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {mode === "minuteur" && (
+        <>
+          <p className="text-xs uppercase mt-6 mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Durées</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {[["25 min", 25], ["45 min", 45], ["1 h", 60], ["1 h 30", 90], ["2 h", 120], ["3 h", 180]].map(([l, m]) => (
+              <button key={l} onClick={() => choisir(m * 60)} className="px-4 py-2.5 text-xs doux"
+                style={{ borderRadius: 999, fontWeight: 600,
+                  background: duree === m * 60 ? T.accent : T.card, color: duree === m * 60 ? "#fff" : T.ink,
+                  border: `1px solid ${duree === m * 60 ? T.accent : T.line}` }}>{l}</button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input value={perso} onChange={(e) => setPerso(e.target.value.replace(/\D/g, ""))}
+              placeholder="Durée en minutes" inputMode="numeric"
+              className="flex-1 px-3 py-2.5 text-sm" style={{ borderRadius: 999, border: `1px solid ${T.line}` }} />
+            <button onClick={() => { const m = parseInt(perso, 10); if (m > 0) { choisir(m * 60); setPerso(""); } }}
+              disabled={!perso} className="px-5 py-2.5 text-sm doux"
+              style={{ borderRadius: 999, background: perso ? T.accent : "#24384F", color: "#fff", fontWeight: 600 }}>
+              Régler
+            </button>
+          </div>
+        </>
+      )}
+
+      <p className="text-xs mt-6" style={{ color: T.ink2, lineHeight: 1.7 }}>
+        Pour un accès rapide : Safari, bouton Partager, « Sur l'écran d'accueil ».
+        EDN Go se lance alors en plein écran comme une application.
+      </p>
+    </div>
+  );
+}
+
+/* ================== statistiques ================== */
+function Stats({ items, colleges, resultats, cartes, qcms }) {
+  const [periode, setPeriode] = useState(30);
+  const [ouvert, setOuvert] = useState(null);
+
+  const depuis_ = new Date(Date.now() - periode * 86400000).toISOString().slice(0, 10);
+  const R = resultats.filter((r) => r.date >= depuis_);
+  const sec = (l) => Math.round(l.reduce((s, r) => s + Math.min(r.ms || 0, 300000), 0) / 1000);
+  const taux = (l) => l.length ? Math.round(l.reduce((s, x) => s + x.valeur, 0) / l.length * 100) : null;
+  const duree = (s) => {
+    if (!s) return "0 min";
+    const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+    return h ? `${h} h ${String(m).padStart(2, "0")}` : `${m} min`;
+  };
+
+  const stats = colleges.map((c) => {
+    const its = items.filter((i) => i.collegeId === c.id);
+    const ids = its.map((i) => i.id);
+    const l = R.filter((r) => ids.includes(r.itemId));
+    const exos = [...cartes, ...qcms].filter((x) => ids.includes(x.itemId));
+    return {
+      c, its, l, sec: sec(l), taux: taux(l), n: l.length,
+      justes: l.filter((r) => r.valeur >= 1).length,
+      rates: l.filter((r) => r.valeur < 1).length,
+      exos: exos.length,
+      testes: new Set(l.map((r) => r.itemId)).size,
+      acquis: its.filter((i) => (i.comp || 0) === 4).length,
+      avance: its.length ? Math.round(its.reduce((s, i) => s + (i.comp || 0) / 4, 0) / its.length * 100) : 0,
+    };
+  }).filter((x) => x.exos > 0 || x.n > 0 || x.its.some((i) => i.comp));
+
+  const totalSec = sec(R);
+  const maxSec = Math.max(1, ...stats.map((x) => x.sec));
+
+  /* courbe des 14 derniers jours d'activité */
+  const jours14 = [...Array(14)].map((_, k) => {
+    const d = new Date(Date.now() - (13 - k) * 86400000).toISOString().slice(0, 10);
+    const l = resultats.filter((r) => r.date === d);
+    return { d, n: l.length, sec: sec(l), taux: taux(l) };
+  });
+  const maxJ = Math.max(1, ...jours14.map((j) => j.sec));
+
+  const Carte = ({ titre, valeur, sous, coul }) => (
+    <div style={{ background: T.card, borderRadius: 18, padding: "13px 15px", flex: "1 1 130px" }}>
+      <p className="text-xs uppercase" style={{ letterSpacing: "0.09em", color: T.ink2 }}>{titre}</p>
+      <p style={{ fontFamily: serif, fontSize: 25, lineHeight: 1.2, color: coul || T.ink }}>{valeur}</p>
+      {sous && <p className="text-xs" style={{ color: T.ink2 }}>{sous}</p>}
+    </div>
+  );
+
+  return (
+    <div>
+      <h2 className="mb-1" style={{ fontFamily: serif, fontSize: 26 }}>Statistiques</h2>
+      <p className="text-xs mb-4" style={{ color: T.ink2 }}>Appuie sur un collège pour le détail item par item.</p>
+
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {[7, 30, 90, 3650].map((p) => (
+          <button key={p} onClick={() => setPeriode(p)} className="px-4 py-2 text-xs doux"
+            style={{ borderRadius: 999, fontWeight: 600,
+              background: periode === p ? T.accent : "transparent", color: periode === p ? "#fff" : T.ink2,
+              border: `1px solid ${periode === p ? T.accent : T.line}` }}>
+            {p === 3650 ? "Tout" : p + " j"}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2.5 mb-5">
+        <Carte titre="Temps" valeur={duree(totalSec)} sous={`${[...new Set(R.map((r) => r.date))].length} jour(s)`} />
+        <Carte titre="Réponses" valeur={R.length} sous={`${R.filter((r) => r.valeur >= 1).length} justes`} />
+        <Carte titre="Réussite" valeur={taux(R) === null ? "—" : taux(R) + " %"} coul={couleur(taux(R))} />
+        <Carte titre="Erreurs" valeur={R.filter((r) => r.valeur < 1).length} coul={T.bas} sous="à retravailler" />
+      </div>
+
+      {/* activité des 14 derniers jours */}
+      <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+        Ces deux semaines
+      </p>
+      <div className="ombre mb-5" style={{ background: T.card, borderRadius: 20, padding: "16px 16px 12px" }}>
+        <div className="flex items-end gap-1.5" style={{ height: 96 }}>
+          {jours14.map((j, k) => (
+            <div key={k} className="flex-1 flex flex-col items-center justify-end" style={{ height: "100%" }}>
+              {j.sec > 0 && (
+                <span className="text-xs mb-1" style={{ color: T.ink2, fontSize: 9 }}>
+                  {Math.round(j.sec / 60)}
+                </span>
+              )}
+              <div className="doux w-full" style={{
+                height: Math.max(j.sec > 0 ? 6 : 2, (j.sec / maxJ) * 70),
+                background: j.sec > 0 ? couleur(j.taux) : "#1E3149",
+                borderRadius: 6,
+              }} />
+              <span style={{ fontSize: 9, color: T.ink2, marginTop: 4 }}>
+                {new Date(j.d + "T12:00:00").getDate()}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs mt-2" style={{ color: T.ink2 }}>
+          Hauteur : minutes travaillées. Couleur : taux de réussite du jour.
+        </p>
+      </div>
+
+      {/* par collège */}
+      <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Par collège</p>
+      {stats.length === 0 ? (
+        <p className="text-sm py-6" style={{ color: T.ink2, lineHeight: 1.7 }}>
+          Aucune donnée. Colore des items dans la grille ou lance une séance de QCM.
+        </p>
+      ) : stats.sort((a, b) => b.sec - a.sec).map((x) => {
+        const p = pal(x.c.nom);
+        const on = ouvert === x.c.id;
+        return (
+          <div key={x.c.id} className="mb-2.5 ombre" style={{ background: T.card, borderRadius: 20, overflow: "hidden" }}>
+            <button onClick={() => setOuvert(on ? null : x.c.id)} className="w-full text-left"
+              style={{ padding: "14px 16px" }}>
+              <div className="flex items-baseline justify-between mb-2">
+                <span style={{ color: p.fg, fontWeight: 700, fontSize: 15 }}>{on ? "▾ " : "▸ "}{x.c.nom}</span>
+                <span className="text-xs" style={{ color: T.ink2 }}>
+                  {duree(x.sec)} · {x.n} rép. {x.taux !== null && <b style={{ color: couleur(x.taux) }}>{x.taux}%</b>}
+                </span>
+              </div>
+              {/* temps relatif */}
+              <div className="h-2 rounded-full mb-2" style={{ background: "#152438" }}>
+                <div className="doux h-2 rounded-full" style={{ width: (x.sec / maxSec) * 100 + "%", background: p.fg }} />
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span style={{ color: T.ink2 }}>{x.avance}% du collège avancé</span>
+                <span style={{ color: T.ink2 }}>· {x.acquis}/{x.its.length} bien compris</span>
+                <span style={{ color: T.ink2 }}>· {x.testes} item(s) testés</span>
+              </div>
+            </button>
+
+            {on && (
+              <div className="vue" style={{ background: T.paper, padding: "12px 14px" }}>
+                <div className="flex flex-wrap gap-2 mb-3 text-xs">
+                  <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.card, color: T.haut, fontWeight: 700 }}>
+                    {x.justes} justes
+                  </span>
+                  <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.card, color: T.bas, fontWeight: 700 }}>
+                    {x.rates} ratées
+                  </span>
+                  <span className="px-3 py-1.5" style={{ borderRadius: 999, background: T.card, color: T.ink2 }}>
+                    {x.exos} exercice(s)
+                  </span>
+                </div>
+
+                {/* répartition de la compréhension */}
+                <p className="text-xs mb-1.5" style={{ color: T.ink2 }}>Compréhension des items</p>
+                <div className="flex h-3 rounded-full overflow-hidden mb-2" style={{ background: "#152438" }}>
+                  {[4, 3, 2, 1].map((k) => {
+                    const nb = x.its.filter((i) => (i.comp || 0) === k).length;
+                    return nb ? <div key={k} title={NIVEAUX_C[k].nom}
+                      style={{ width: (nb / x.its.length) * 100 + "%", background: NIVEAUX_C[k].bord }} /> : null;
+                  })}
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {[4, 3, 2, 1, 0].map((k) => {
+                    const nb = x.its.filter((i) => (i.comp || 0) === k).length;
+                    return nb ? (
+                      <span key={k} className="text-xs px-2.5 py-1" style={{ borderRadius: 999,
+                        background: NIVEAUX_C[k].bg, color: NIVEAUX_C[k].fg }}>
+                        {NIVEAUX_C[k].nom} <b>{nb}</b>
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+
+                {/* détail item par item */}
+                <p className="text-xs mb-1.5" style={{ color: T.ink2 }}>Détail par item</p>
+                <div style={{ maxHeight: 260, overflowY: "auto" }}>
+                  {x.its.map((i) => {
+                    const h = R.filter((r) => r.itemId === i.id);
+                    const s2 = sec(h), t2 = taux(h);
+                    const nExos = [...cartes, ...qcms].filter((e) => e.itemId === i.id).length;
+                    if (!h.length && !nExos && !(i.comp || 0)) return null;
+                    const N = NIVEAUX_C[Math.min(i.comp || 0, 4)];
+                    return (
+                      <div key={i.id} className="flex items-center gap-2.5 py-2"
+                        style={{ borderBottom: `1px solid ${T.line}` }}>
+                        <span className="shrink-0" style={{ width: 4, height: 26, borderRadius: 999, background: N.bord }} />
+                        <span className="shrink-0 text-xs" style={{ width: 30, color: T.ink2, fontWeight: 700 }}>{i.numero}</span>
+                        <span className="flex-1 min-w-0 text-xs truncate">{i.titre}</span>
+                        <span className="shrink-0 text-xs" style={{ width: 52, textAlign: "right", color: T.ink2 }}>
+                          {s2 ? duree(s2) : "—"}
+                        </span>
+                        <span className="shrink-0 text-xs" style={{ width: 44, textAlign: "right", color: T.ink2 }}>
+                          {h.length ? `${h.filter((r) => r.valeur >= 1).length}/${h.length}` : "—"}
+                        </span>
+                        <span className="shrink-0 text-xs" style={{ width: 40, textAlign: "right",
+                          color: couleur(t2), fontWeight: 800 }}>
+                          {t2 === null ? "—" : t2 + "%"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <p className="text-xs mt-4" style={{ color: T.ink2, lineHeight: 1.7 }}>
+        Le temps est compté entre deux réponses, plafonné à cinq minutes par question
+        pour ne pas compter les pauses.
+      </p>
     </div>
   );
 }
@@ -3580,8 +4067,14 @@ function App() {
     return () => clearTimeout(t);
   }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, pret]);
 
-  const noter = (itemId, valeur, type, exoId) =>
-    setResultats((l) => [...l, { id: uid(), itemId, valeur, type, exoId: exoId || null, date: auj(), t: Date.now() }]);
+  /* mesure du temps passé entre deux réponses, plafonné pour ignorer les pauses */
+  const horlogeRep = useRef(Date.now());
+  const noter = (itemId, valeur, type, exoId) => {
+    const ms = Math.min(Date.now() - horlogeRep.current, 300000);
+    horlogeRep.current = Date.now();
+    setResultats((l) => [...l, { id: uid(), itemId, valeur, type, exoId: exoId || null,
+      date: auj(), t: Date.now(), ms }]);
+  };
 
   const definirComp = (id, v, date) =>
     setItems((l) => l.map((i) => i.id === id
@@ -3793,6 +4286,8 @@ function App() {
         .doux { transition: background 180ms ease, color 180ms ease, width 340ms ease, box-shadow 180ms ease; }
         @keyframes entree { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
         .vue { animation: entree 240ms cubic-bezier(0.22, 1, 0.36, 1); }
+        @keyframes voletSort { from { transform: rotateX(0deg); } to { transform: rotateX(-90deg); } }
+        @keyframes voletEntre { from { transform: rotateX(90deg); } to { transform: rotateX(0deg); } }
         button, .doux { -webkit-tap-highlight-color: transparent; }
         button:active { transform: scale(0.97); }
         .relief { transition: transform 180ms cubic-bezier(0.22,1,0.36,1), box-shadow 180ms ease, background 180ms ease, filter 180ms ease; }
@@ -3950,6 +4445,10 @@ function App() {
             onLancer={(p) => p.length ? setSession(p) : setAlerte("Aucun exercice ne correspond à ce choix.")} />
         ) : vue === "ai" ? (
           <MyAI items={items} colleges={colleges} resultats={resultats} />
+        ) : vue === "horloge" ? (
+          <Horloge />
+        ) : vue === "stats" ? (
+          <Stats items={items} colleges={colleges} resultats={resultats} cartes={cartes} qcms={qcms} />
         ) : vue === "dossiers" ? (
           <Dossiers dossiers={dossiers} onMaj={setDossiers} items={items} colleges={colleges}
             onLancer={(d) => setDossierActif(d)} />
@@ -5343,30 +5842,55 @@ function Flashcards({ cartes, onAjouter, onSupprimer, onNoter, resume, onIA }) {
           </div>
           <span className="text-xs" style={{ color: T.ink2, fontWeight: 600 }}>{n + 1}/{cartes.length}</span>
         </div>
-        <div onClick={() => setFace(true)} className="mb-4 flex flex-col justify-center doux"
-          style={{
-            background: face ? T.card : T.accentPale, borderRadius: 24, minHeight: 200,
-            padding: "26px 24px", cursor: "pointer", border: `1.5px solid ${face ? T.line : "transparent"}`,
+        <div onClick={() => setFace(!face)} className="mb-4"
+          style={{ perspective: 1400, cursor: "pointer", minHeight: 220 }}>
+          <div style={{
+            position: "relative", minHeight: 220, transformStyle: "preserve-3d",
+            transition: "transform 520ms cubic-bezier(0.22, 1, 0.36, 1)",
+            transform: face ? "rotateY(180deg)" : "none",
           }}>
-          <p style={{ fontFamily: lecture, fontSize: 19, lineHeight: 1.55, color: "#E2ECF6" }}>{c.recto}</p>
-          {face ? (
-            <p className="mt-5 pt-5" style={{ borderTop: `1px solid ${T.line}`, fontFamily: lecture, fontSize: 17, lineHeight: 1.7, color: "#D6E4F1" }}>
-              {c.verso}
-            </p>
-          ) : (
-            <p className="text-xs mt-6" style={{ color: T.accent, fontWeight: 600 }}>Appuie pour retourner</p>
-          )}
+            {/* recto */}
+            <div style={{
+              position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
+              background: T.accentPale, borderRadius: 24, padding: "26px 24px",
+              display: "flex", flexDirection: "column", justifyContent: "center",
+            }}>
+              <p className="text-xs mb-3" style={{ color: T.accent, fontWeight: 800, letterSpacing: "0.1em" }}>QUESTION</p>
+              <p style={{ fontFamily: lecture, fontSize: 19, lineHeight: 1.55, color: "#E2ECF6" }}>{c.recto}</p>
+              <p className="text-xs mt-6" style={{ color: T.accent, fontWeight: 600 }}>Appuie pour retourner</p>
+            </div>
+            {/* verso */}
+            <div style={{
+              position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
+              transform: "rotateY(180deg)", background: T.card, border: `1.5px solid ${T.line}`,
+              borderRadius: 24, padding: "26px 24px", overflowY: "auto",
+              display: "flex", flexDirection: "column", justifyContent: "center",
+            }}>
+              <p className="text-xs mb-3" style={{ color: T.ink2, fontWeight: 800, letterSpacing: "0.1em" }}>RÉPONSE</p>
+              <p style={{ fontFamily: lecture, fontSize: 17.5, lineHeight: 1.7, color: "#D6E4F1" }}>{c.verso}</p>
+              <p className="text-xs mt-6" style={{ color: T.ink2 }}>Appuie pour revoir la question</p>
+            </div>
+          </div>
         </div>
+
         {face && (
-          <div className="flex gap-3">
-            {[["Pas su", 0, 1], ["Su", 1, 3]].map(([l, v, k]) => (
-              <button key={l} onClick={() => {
-                onNoter(v, "flash");
-                if (n + 1 >= cartes.length) { setMode("liste"); setN(0); setFace(false); }
-                else { setN(n + 1); setFace(false); }
-              }} className="flex-1 py-3.5 text-sm doux"
-                style={{ background: NIV[k].c, color: NIV[k].txt, borderRadius: 999, fontWeight: 600 }}>{l}</button>
-            ))}
+          <div className="flex gap-3 vue">
+            <button onClick={() => {
+              onNoter(0, "flash");
+              if (n + 1 >= cartes.length) { setMode("liste"); setN(0); setFace(false); }
+              else { setN(n + 1); setFace(false); }
+            }} className="flex-1 py-3.5 doux"
+              style={{ background: T.bas, color: "#0E1A29", borderRadius: 999, fontWeight: 800, fontSize: 15 }}>
+              Faux
+            </button>
+            <button onClick={() => {
+              onNoter(1, "flash");
+              if (n + 1 >= cartes.length) { setMode("liste"); setN(0); setFace(false); }
+              else { setN(n + 1); setFace(false); }
+            }} className="flex-1 py-3.5 doux"
+              style={{ background: T.haut, color: "#0E1A29", borderRadius: 999, fontWeight: 800, fontSize: 15 }}>
+              Bon
+            </button>
           </div>
         )}
         <button onClick={() => { setMode("liste"); setN(0); setFace(false); }} className="text-xs mt-5" style={{ color: T.ink2 }}>Quitter</button>
@@ -5444,7 +5968,7 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
     const q = qcms[n]; if (!q) return null;
     if (q.type === "qroc") {
       return (
-        <Qroc q={q} n={n} total={qcms.length}
+        <Qroc key={q.id || n} q={q} n={n} total={qcms.length}
           onNoter={(v) => onNoter(v, "qroc")}
           onSuivant={() => { if (n + 1 >= qcms.length) { setMode("liste"); setN(0); } else setN(n + 1); }}
           onQuitter={() => { setMode("liste"); setN(0); }} />
@@ -5902,7 +6426,7 @@ function Session({ paquet, onNoter, onFin, items }) {
       <p className="text-xs mb-3" style={{ color: T.ink2 }}>{it ? `Item ${it.numero} — ${it.titre}` : ""}</p>
 
       {e.genre === "qcm" && e.type === "qroc" ? (
-        <Qroc q={e} n={n} total={paquet.length}
+        <Qroc key={e.id || n} q={e} n={n} total={paquet.length}
           onNoter={(v) => { onNoter(e.itemId, v, "qroc", e.id); if (v >= 1) setScore((s) => s + 1); }}
           onSuivant={() => { if (n + 1 >= paquet.length) return onFin(); setN(n + 1); setFace(false); setChoix([]); setCorrige(false); }}
           onQuitter={onFin} />
