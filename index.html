@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v54";
+const VERSION = "v55";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -4009,6 +4009,7 @@ function App() {
   const [fiches, setFiches] = useState([]);
   const [taches, setTaches] = useState([]);
   const [dossiers, setDossiers] = useState([]);
+  const [seances, setSeances] = useState([]);
   const [dossierActif, setDossierActif] = useState(null);
   const [pret, setPret] = useState(false);
   const [alerte, setAlerte] = useState(null);
@@ -4034,6 +4035,7 @@ function App() {
         setFiches(d.fiches || []);
         setTaches(d.taches || []);
         setDossiers(d.dossiers || []);
+        setSeances(d.seances || []);
       } catch {
         try { /* reprise de l'ancienne version */
           const v = JSON.parse((await window.storage.get(KEY_ANCIEN)).value);
@@ -4118,12 +4120,12 @@ function App() {
     if (premier.current) { premier.current = false; return; }
     const t = setTimeout(async () => {
       try {
-        await window.storage.set(KEY, JSON.stringify({ colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers }));
+        await window.storage.set(KEY, JSON.stringify({ colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances }));
         setAlerte(null);
       } catch { setAlerte("Sauvegarde impossible. Exporte tes données."); }
     }, 500);
     return () => clearTimeout(t);
-  }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, pret]);
+  }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances, pret]);
 
   /* mesure du temps passé entre deux réponses, plafonné pour ignorer les pauses */
   const horlogeRep = useRef(Date.now());
@@ -4238,7 +4240,7 @@ function App() {
   };
 
   const exporter = () => {
-    const b = new Blob([JSON.stringify({ colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers }, null, 2)], { type: "application/json" });
+    const b = new Blob([JSON.stringify({ colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances }, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b); a.download = `edn-go-${VERSION}-${auj()}.json`; a.click();
     URL.revokeObjectURL(a.href);
@@ -4260,6 +4262,7 @@ function App() {
           if (d.fiches) setFiches(d.fiches);
           if (d.taches) setTaches(d.taches);
           if (d.dossiers) setDossiers(d.dossiers);
+          if (d.seances) setSeances(d.seances);
           setAlerte(`Sauvegarde restaurée : ${(d.items || []).length} items, ${(d.qcms || []).length} QCM, `
             + `${(d.cartes || []).length} flashcards, ${(d.fiches || []).length} fiche(s). Les PDF ne sont pas dans l'export.`);
           return;
@@ -4466,6 +4469,8 @@ function App() {
             qcms={qcms.filter((c) => c.itemId === item.id)}
             annales={annales.filter((a) => a.itemId === item.id)}
             resultats={resultats.filter((r) => r.itemId === item.id)}
+            seances={seances.filter((x) => x.itemId === item.id)}
+            onSeance={(x) => setSeances((l) => [...l, { ...x, id: uid(), itemId: item.id }])}
             onResume={(v) => setItems((l) => l.map((i) => i.id === item.id ? { ...i, resume: v } : i))}
             onAjoutCarte={(c) => setCartes((l) => [...l, { ...c, id: uid(), itemId: item.id }])}
             onSupprCarte={(id) => setCartes((l) => l.filter((x) => x.id !== id))}
@@ -5607,6 +5612,7 @@ function ListeItems({ items, scores, colleges, cartes = [], qcms = [], onOuvrir 
 /* ================== un item ================== */
 function VueItem({ item, college, score, cartes, qcms, annales, resultats, onResume, onAjoutCarte, onSupprCarte,
   onAjoutQcm, onSupprQcm, onAjoutAnnale, onSupprAnnale, onNoter, onSession, onTour, onAnnulerTour, onNiveau,
+  seances = [], onSeance,
   fiches = [], onFiches }) {
   const nbFiches = fiches.filter((x) => x.itemId === item.id).length;
   const tours = item.tours || [];
@@ -5614,6 +5620,7 @@ function VueItem({ item, college, score, cartes, qcms, annales, resultats, onRes
   const [edition, setEdition] = useState(false);
   const [genreIA, setGenreIA] = useState("qcm");
   const [reglageLisa, setReglageLisa] = useState(false);
+  const [revue, setRevue] = useState(null);
   const [modeleLisa, setModeleLisa] = useState(litLisa());
   const onglets = [["resume", "Résumé"], ["flash", `Flashcards${cartes.length ? " · " + cartes.length : ""}`],
   ["qcm", `QCM${qcms.length ? " · " + qcms.length : ""}`], ["fiches", `Fiches${nbFiches ? " · " + nbFiches : ""}`], ["ia", "IA"],
@@ -5734,6 +5741,7 @@ function VueItem({ item, college, score, cartes, qcms, annales, resultats, onRes
         {volet === "flash" && <Flashcards cartes={cartes} onAjouter={onAjoutCarte} onSupprimer={onSupprCarte} onNoter={onNoter} resume={item.resume}
             onIA={(g) => { setGenreIA(g); setVolet("ia"); }} />}
         {volet === "qcm" && <BanqueQcm qcms={qcms} onAjouter={onAjoutQcm} onSupprimer={onSupprQcm} onNoter={onNoter}
+          onSeance={onSeance}
             onIA={(g) => { setGenreIA(g); setVolet("ia"); }} />}
         {volet === "fiches" && <FichesItem fiches={fiches} onMaj={onFiches} item={item} />}
         {volet === "ia" && (
@@ -5741,7 +5749,9 @@ function VueItem({ item, college, score, cartes, qcms, annales, resultats, onRes
             onAjoutCarte={onAjoutCarte} onAjoutQcm={onAjoutQcm} />
         )}
         {volet === "annales" && <Annales annales={annales} onAjouter={onAjoutAnnale} onSupprimer={onSupprAnnale} />}
-        {volet === "progression" && <Progression resultats={resultats} />}
+        {volet === "progression" && (revue
+          ? <RevueSeance seance={revue} onFermer={() => setRevue(null)} />
+          : <Progression resultats={resultats} seances={seances} onOuvrirSeance={setRevue} />)}
       </div>
     </div>
   );
@@ -6010,7 +6020,7 @@ function Flashcards({ cartes, onAjouter, onSupprimer, onNoter, resume, onIA }) {
 
 /* ================== QCM ================== */
 const LETTRES = ["A", "B", "C", "D", "E"];
-function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
+function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA, onSeance }) {
   const [mode, setMode] = useState("liste");
   const [enonce, setEnonce] = useState("");
   const [props, setProps] = useState(LETTRES.map(() => ({ txt: "", vrai: false })));
@@ -6021,6 +6031,8 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
   const [graine, setGraine] = useState(0);
   const [paquet, setPaquet] = useState([]);
   const [reglage, setReglage] = useState(false);
+  const [journal, setJournal] = useState([]);
+  const [bilan, setBilan] = useState(null);
 
   /* Chaque séance tire un paquet au hasard : ni le même ordre, ni les mêmes
      questions d'une fois sur l'autre. */
@@ -6028,7 +6040,8 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
     const melange = [...qcms].sort(() => Math.random() - 0.5);
     setPaquet(combien ? melange.slice(0, combien) : melange);
     setGraine(Math.floor(Math.random() * 1e9));
-    setN(0); setChoix([]); setCorrige(false); setReglage(false); setMode("reviser");
+    setN(0); setChoix([]); setCorrige(false); setReglage(false);
+    setJournal([]); setBilan(null); setMode("reviser");
   };
   const [saisie, setSaisie] = useState("");
 
@@ -6045,6 +6058,52 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
     }
     const ordre = propsMelangees(q, n, graine);
     const juste = ordre.every((p, i) => p.vrai === choix.includes(i));
+
+    /* fin de séance : note sur 20 et récapitulatif */
+    if (bilan) {
+      const note = noteSur20(bilan.points, bilan.detail.length);
+      const parfaits = bilan.detail.filter((x) => x.disc === 0).length;
+      return (
+        <div>
+          <div className="ombre mb-4 vue" style={{ background: T.card, borderRadius: 26, padding: "26px 22px", textAlign: "center" }}>
+            <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.12em", color: T.ink2 }}>Note de la séance</p>
+            <p style={{ fontFamily: serif, fontSize: 58, lineHeight: 1, color: couleur(note * 5) }}>
+              {note}<span style={{ fontSize: 26, color: T.ink2 }}> / 20</span>
+            </p>
+            <p className="text-xs mt-3" style={{ color: T.ink2 }}>
+              {bilan.detail.length} question(s) · {parfaits} sans discordance · barème EDN
+            </p>
+          </div>
+
+          <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Détail</p>
+          {bilan.detail.map((x, k) => (
+            <div key={k} className="flex items-center gap-3 mb-2"
+              style={{ background: T.card, borderRadius: 14, padding: "11px 14px",
+                borderLeft: `4px solid ${x.disc === 0 ? T.haut : x.disc <= 2 ? T.moyen : T.bas}` }}>
+              <span className="shrink-0 text-xs" style={{ width: 22, color: T.ink2, fontWeight: 700 }}>{k + 1}</span>
+              <span className="flex-1 min-w-0 text-xs truncate">{x.enonce}</span>
+              <span className="shrink-0 text-xs" style={{ color: T.ink2 }}>
+                {x.disc} disc.
+              </span>
+              <span className="shrink-0 text-xs" style={{ width: 34, textAlign: "right", fontWeight: 800,
+                color: x.pts === 1 ? T.haut : x.pts > 0 ? T.moyen : T.bas }}>
+                {x.pts}
+              </span>
+            </div>
+          ))}
+
+          <button onClick={() => { setMode("liste"); setBilan(null); setN(0); }}
+            className="w-full py-3.5 mt-4 doux"
+            style={{ background: T.accent, color: "#fff", borderRadius: 999, fontWeight: 700 }}>
+            Terminer
+          </button>
+          <p className="text-xs mt-3" style={{ color: T.ink2, lineHeight: 1.7 }}>
+            Barème : aucune discordance 1 point, une discordance 0,5, deux discordances 0,2, au-delà 0.
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div>
         <div className="flex items-center gap-3 mb-4">
@@ -6067,15 +6126,32 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
 
         <div className="mt-5">
           {!corrige ? (
-            <button onClick={() => { setCorrige(true); onNoter(juste ? 1 : 0, "qcm"); }} disabled={!choix.length}
+            <button onClick={() => {
+              const d = discordances(ordre, choix);
+              setJournal((l) => [...l, {
+                exoId: q.id || null, enonce: q.enonce, disc: d, pts: pointsQcm(d),
+                props: ordre.map((p, i) => ({ txt: p.txt, vrai: p.vrai, coche: choix.includes(i), pourquoi: p.pourquoi })),
+                explication: q.explication || "",
+              }]);
+              setCorrige(true); onNoter(juste ? 1 : 0, "qcm");
+            }} disabled={!choix.length}
               className="w-full py-3.5 text-sm doux"
               style={{ background: choix.length ? T.accent : "#24384F", color: "#fff", borderRadius: 999, fontWeight: 600 }}>
               Valider
             </button>
           ) : (
-            <button onClick={() => { if (n + 1 >= liste.length) { setMode("liste"); setN(0); } else setN(n + 1); setChoix([]); setCorrige(false); }}
-              className="w-full py-3.5 text-sm doux" style={{ background: T.ink, color: "#fff", borderRadius: 999, fontWeight: 600 }}>
-              {n + 1 >= liste.length ? "Terminer" : "Question suivante"}
+            <button onClick={() => {
+              if (n + 1 >= liste.length) {
+                const pts = journal.reduce((a, x) => a + x.pts, 0);
+                if (journal.length && onSeance) {
+                  onSeance({ date: auj(), t: Date.now(), points: pts,
+                    note: noteSur20(pts, journal.length), detail: journal });
+                }
+                setBilan({ points: pts, detail: journal });
+              } else { setN(n + 1); setChoix([]); setCorrige(false); }
+            }} className="w-full py-3.5 text-sm doux"
+              style={{ background: T.ink, color: "#fff", borderRadius: 999, fontWeight: 600 }}>
+              {n + 1 >= liste.length ? "Voir ma note" : "Question suivante"}
             </button>
           )}
         </div>
@@ -6218,6 +6294,14 @@ function graineDe(txt) {
 }
 const propsMelangees = (q, n, graine) =>
   permuter(q.props || [], graineDe(q.id || q.enonce) + (n || 0) * 101 + (graine || 0));
+
+/* Barème des EDN : aucune discordance vaut 1 point, une discordance 0,5,
+   deux discordances 0,2, au-delà 0. Une discordance est une proposition
+   cochée à tort ou oubliée à tort. */
+const discordances = (props, choix) =>
+  (props || []).reduce((n, p, i) => n + (p.vrai !== choix.includes(i) ? 1 : 0), 0);
+const pointsQcm = (d) => (d === 0 ? 1 : d === 1 ? 0.5 : d === 2 ? 0.2 : 0);
+const noteSur20 = (pts, n) => (n ? Math.round((pts / n) * 20 * 10) / 10 : null);
 
 function Proposition({ p, i, choisi, corrige, onClic }) {
   /* quatre situations distinctes une fois corrigé */
@@ -6423,32 +6507,137 @@ function Annales({ annales, onAjouter, onSupprimer }) {
 }
 
 /* ================== progression d'un item ================== */
-function Progression({ resultats }) {
-  if (resultats.length < 2) return (
-    <p className="text-sm" style={{ color: T.ink2 }}>
-      La courbe démarre après deux tentatives. Fais quelques flashcards ou QCM sur cet item.
-    </p>
-  );
+function Progression({ resultats, seances = [], onOuvrirSeance }) {
+  const moy = seances.length
+    ? Math.round((seances.reduce((a, x) => a + x.note, 0) / seances.length) * 10) / 10 : null;
+  const taux = resultats.length
+    ? Math.round((resultats.reduce((a, r) => a + r.valeur, 0) / resultats.length) * 100) : null;
+
   const cum = [];
-  let s = 0;
-  resultats.forEach((r, i) => { s += r.valeur; cum.push(Math.round((s / (i + 1)) * 100)); });
-  const L = 300, H = 80;
-  const pts = cum.map((v, i) => `${(i / (cum.length - 1)) * L},${H - (v / 100) * H}`).join(" ");
+  let s2 = 0;
+  resultats.forEach((r, i) => { s2 += r.valeur; cum.push(Math.round((s2 / (i + 1)) * 100)); });
+  const L = 300, H = 90;
+  const pts = cum.length > 1
+    ? cum.map((v, i) => `${(i / (cum.length - 1)) * L},${H - (v / 100) * H}`).join(" ") : "";
+
   return (
     <div>
-      <p className="text-xs mb-2" style={{ color: T.ink2 }}>
-        Taux de réussite cumulé sur {resultats.length} tentatives
+      <div className="flex flex-wrap gap-2.5 mb-5">
+        <div style={{ background: T.card, borderRadius: 20, padding: "14px 16px", flex: "1 1 140px" }}>
+          <p className="text-xs uppercase" style={{ letterSpacing: "0.09em", color: T.ink2 }}>Réussite</p>
+          <p style={{ fontFamily: serif, fontSize: 30, lineHeight: 1.15, color: couleur(taux) }}>
+            {taux === null ? "—" : taux + " %"}
+          </p>
+          <p className="text-xs" style={{ color: T.ink2 }}>{resultats.length} réponse(s)</p>
+        </div>
+        <div style={{ background: T.card, borderRadius: 20, padding: "14px 16px", flex: "1 1 140px" }}>
+          <p className="text-xs uppercase" style={{ letterSpacing: "0.09em", color: T.ink2 }}>Note moyenne</p>
+          <p style={{ fontFamily: serif, fontSize: 30, lineHeight: 1.15, color: couleur(moy === null ? null : moy * 5) }}>
+            {moy === null ? "—" : moy}<span style={{ fontSize: 16, color: T.ink2 }}>{moy === null ? "" : " / 20"}</span>
+          </p>
+          <p className="text-xs" style={{ color: T.ink2 }}>{seances.length} séance(s)</p>
+        </div>
+      </div>
+
+      {pts && (
+        <>
+          <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+            Réussite cumulée
+          </p>
+          <svg viewBox={`0 0 ${L} ${H}`} width="100%" height="90" preserveAspectRatio="none" className="mb-5">
+            <line x1="0" y1={H * 0.2} x2={L} y2={H * 0.2} stroke={T.line} strokeDasharray="3 3" />
+            <polyline points={pts} fill="none" stroke={T.accent} strokeWidth="2" strokeLinejoin="round" />
+          </svg>
+        </>
+      )}
+
+      <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+        Mes séances
       </p>
-      <svg viewBox={`0 0 ${L} ${H}`} width="100%" height="90" preserveAspectRatio="none">
-        <line x1="0" y1={H - 0.8 * H} x2={L} y2={H - 0.8 * H} stroke={T.line} strokeDasharray="3 3" />
-        <polyline points={pts} fill="none" stroke={T.accent} strokeWidth="2" />
-      </svg>
-      <p className="text-sm mt-3">Actuellement : <span style={{ fontFamily: mono, color: couleur(cum[cum.length - 1]) }}>{cum[cum.length - 1]} %</span></p>
+      {seances.length === 0 ? (
+        <p className="text-sm" style={{ color: T.ink2, lineHeight: 1.7 }}>
+          Aucune séance notée pour l'instant. Lance « Se tester » sur les QCM :
+          chaque séance donnera une note sur 20 selon le barème des EDN, et tu pourras
+          revenir ici revoir les questions ratées.
+        </p>
+      ) : (
+        [...seances].sort((a, b) => b.t - a.t).map((x) => {
+          const rates = (x.detail || []).filter((q) => q.disc > 0).length;
+          return (
+            <button key={x.id} onClick={() => onOuvrirSeance && onOuvrirSeance(x)}
+              className="w-full text-left mb-2 flex items-center gap-3 doux"
+              style={{ background: T.card, borderRadius: 16, padding: "13px 15px",
+                borderLeft: `4px solid ${couleur(x.note * 5)}` }}>
+              <span className="shrink-0" style={{ fontFamily: serif, fontSize: 21, fontWeight: 700,
+                color: couleur(x.note * 5), width: 62 }}>
+                {x.note}<span style={{ fontSize: 12, color: T.ink2 }}>/20</span>
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm">{dCourte(x.date)}</span>
+                <span className="block text-xs mt-0.5" style={{ color: T.ink2 }}>
+                  {(x.detail || []).length} question(s) · {rates} avec discordance
+                </span>
+              </span>
+              <span style={{ color: T.accent, fontSize: 17 }}>›</span>
+            </button>
+          );
+        })
+      )}
     </div>
   );
 }
 
-/* ================== mes erreurs ================== */
+/* revue d'une séance passée : on revoit chaque question et ses discordances */
+function RevueSeance({ seance, onFermer }) {
+  const [filtre, setFiltre] = useState("rates");
+  const detail = seance.detail || [];
+  const liste = filtre === "rates" ? detail.filter((q) => q.disc > 0) : detail;
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-4">
+        <button onClick={onFermer} className="flex items-center justify-center doux shrink-0"
+          style={{ width: 34, height: 34, borderRadius: 999, border: `1px solid ${T.line}`, color: T.accent }}>←</button>
+        <span className="flex-1">
+          <span className="block text-sm" style={{ fontWeight: 600 }}>Séance du {dCourte(seance.date)}</span>
+          <span className="block text-xs" style={{ color: T.ink2 }}>{detail.length} question(s)</span>
+        </span>
+        <span style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: couleur(seance.note * 5) }}>
+          {seance.note}<span style={{ fontSize: 13, color: T.ink2 }}>/20</span>
+        </span>
+      </div>
+
+      <div className="flex gap-2 mb-4">
+        {[["rates", `Avec discordance (${detail.filter((q) => q.disc > 0).length})`],
+          ["tout", `Toutes (${detail.length})`]].map(([v, l]) => (
+          <button key={v} onClick={() => setFiltre(v)} className="px-4 py-2 text-xs doux"
+            style={{ borderRadius: 999, fontWeight: 600,
+              background: filtre === v ? T.accent : T.accentPale, color: filtre === v ? "#fff" : T.accent }}>{l}</button>
+        ))}
+      </div>
+
+      {liste.length === 0 ? (
+        <p className="text-sm py-4" style={{ color: T.ink2 }}>Aucune discordance sur cette séance.</p>
+      ) : liste.map((q, k) => (
+        <div key={k} className="mb-4" style={{ background: T.card, borderRadius: 20, padding: "16px 18px" }}>
+          <div className="flex items-start gap-3 mb-3">
+            <span className="flex-1" style={{ fontSize: 15, lineHeight: 1.5, fontWeight: 500 }}>{q.enonce}</span>
+            <span className="shrink-0 text-xs px-2.5 py-1" style={{ borderRadius: 999, fontWeight: 800,
+              background: q.disc === 0 ? T.haut : q.disc <= 2 ? T.moyen : T.bas, color: "#0E1A29" }}>
+              {q.pts} pt
+            </span>
+          </div>
+          {(q.props || []).map((p, i) => (
+            <Proposition key={i} p={p} i={i} choisi={p.coche} corrige onClic={() => {}} />
+          ))}
+          {q.explication && <Correction juste={q.disc === 0} texte={q.explication}
+            props={q.props} choix={(q.props || []).map((p, i) => (p.coche ? i : -1)).filter((i) => i >= 0)} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Erreurs({ erreurs, items, onAjouter, onSupprimer, onOuvrir }) {
   const [texte, setTexte] = useState(""); const [lien, setLien] = useState("");
   return (
