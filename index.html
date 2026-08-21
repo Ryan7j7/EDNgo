@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v55";
+const VERSION = "v57";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1114,6 +1114,27 @@ function Documents({ docs = [], onMaj }) {
   );
 }
 
+/* L'Apple Pencil envoie jusqu'à 240 points par seconde. Conservés tels quels,
+   quelques pages saturent le stockage du navigateur et l'enregistrement échoue.
+   On ne garde que les points qui s'écartent réellement de la ligne : le tracé
+   est visuellement identique, pour dix à vingt fois moins de données. */
+function alleger(pts, tolerance) {
+  if (!pts || pts.length < 3) return pts || [];
+  const garde = [pts[0]];
+  let ancre = pts[0];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [ax, ay] = ancre, [bx, by] = pts[i + 1], [px, py] = pts[i];
+    const dx = bx - ax, dy = by - ay;
+    const n2 = dx * dx + dy * dy;
+    let ecart;
+    if (n2 === 0) ecart = Math.hypot(px - ax, py - ay);
+    else ecart = Math.abs(dy * px - dx * py + bx * ay - by * ax) / Math.sqrt(n2);
+    if (ecart > tolerance) { garde.push(pts[i]); ancre = pts[i]; }
+  }
+  garde.push(pts[pts.length - 1]);
+  return garde.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
+}
+
 const clair = (c) => {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
   return (r * 299 + g * 587 + b * 114) / 1000 > 140;
@@ -1333,7 +1354,12 @@ function Toile({ traces, onTraces }) {
       const t = trait.current;
       trait.current = null;
       if (encours.current) { encours.current.remove(); encours.current = null; }
-      if (t && t.pts.length > 1) cfg.current.onTraces([...cfg.current.traces, t]);
+      if (t && t.pts.length > 1) {
+        const tol = Math.max(0.22, vue.current.w / 3200);
+        cfg.current.onTraces([...cfg.current.traces, {
+          couleur: t.couleur, taille: Math.round(t.taille * 100) / 100, pts: alleger(t.pts, tol),
+        }]);
+      }
     };
 
     const molette = (e) => {
@@ -3748,7 +3774,8 @@ ${faibles.length ? "Items sur lesquels l'étudiant est en difficulté : " + faib
 }
 
 /* ================== résultats détaillés ================== */
-function Resultats({ items, colleges, resultats, annales, cartes = [], qcms = [] }) {
+function Resultats({ items, colleges, resultats, annales, cartes = [], qcms = [], seances = [] }) {
+  const [revue, setRevue] = useState(null);
   const [periode, setPeriode] = useState(30);
   const [colFiltre, setColFiltre] = useState("tous");
   const [tri, setTri] = useState("faibles");
@@ -3811,6 +3838,8 @@ function Resultats({ items, colleges, resultats, annales, cartes = [], qcms = []
 
   return (
     <div>
+      {revue && <RevueSeance seance={revue} onFermer={() => setRevue(null)} />}
+      {revue ? null : (<>
       <h2 className="mb-1" style={{ fontFamily: serif, fontSize: 26 }}>Résultats</h2>
       <p className="text-xs mb-4" style={{ color: T.ink2 }}>Tout est calculé sur tes réponses, rien n'est déclaratif.</p>
 
@@ -3965,9 +3994,42 @@ function Resultats({ items, colleges, resultats, annales, cartes = [], qcms = []
         </div>
       )}
 
+      {seances.length > 0 && (
+        <>
+          <p className="text-xs uppercase mb-2 mt-6" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+            Mes séances notées — appuie pour revoir tes erreurs
+          </p>
+          {[...seances].sort((a, b) => b.t - a.t).slice(0, 30).map((x) => {
+            const it = items.find((i) => i.id === x.itemId);
+            const rates = (x.detail || []).filter((q) => q.disc > 0).length;
+            return (
+              <button key={x.id} onClick={() => setRevue(x)}
+                className="w-full text-left mb-2 flex items-center gap-3 doux"
+                style={{ background: T.card, borderRadius: 16, padding: "13px 15px",
+                  borderLeft: `4px solid ${couleur(x.note * 5)}` }}>
+                <span className="shrink-0" style={{ fontFamily: serif, fontSize: 21, fontWeight: 700,
+                  color: couleur(x.note * 5), width: 62 }}>
+                  {x.note}<span style={{ fontSize: 12, color: T.ink2 }}>/20</span>
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm truncate">
+                    {it ? `${it.numero}. ${it.titre}` : "Item supprimé"}
+                  </span>
+                  <span className="block text-xs mt-0.5" style={{ color: T.ink2 }}>
+                    {dCourte(x.date)} · {(x.detail || []).length} question(s) · {rates} avec discordance
+                  </span>
+                </span>
+                <span style={{ color: T.accent, fontSize: 17 }}>›</span>
+              </button>
+            );
+          })}
+        </>
+      )}
+
       <p className="text-xs mt-4" style={{ color: T.ink2 }}>
         {annales.length > 0 ? `${annales.length} annale(s) saisie(s).` : ""}
       </p>
+      </>)}
     </div>
   );
 }
@@ -4010,6 +4072,8 @@ function App() {
   const [taches, setTaches] = useState([]);
   const [dossiers, setDossiers] = useState([]);
   const [seances, setSeances] = useState([]);
+  const [echec, setEchec] = useState(false);
+  const [poids, setPoids] = useState(0);
   const [dossierActif, setDossierActif] = useState(null);
   const [pret, setPret] = useState(false);
   const [alerte, setAlerte] = useState(null);
@@ -4119,10 +4183,20 @@ function App() {
     if (!pret) return;
     if (premier.current) { premier.current = false; return; }
     const t = setTimeout(async () => {
+      const donnees = JSON.stringify({ colleges, items, cartes, qcms, annales, resultats,
+        erreurs, cours, fiches, taches, dossiers, seances });
+      setPoids(donnees.length);
       try {
-        await window.storage.set(KEY, JSON.stringify({ colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances }));
-        setAlerte(null);
-      } catch { setAlerte("Sauvegarde impossible. Exporte tes données."); }
+        await window.storage.set(KEY, donnees);
+        setEchec(false);
+      } catch (e) {
+        /* Une sauvegarde qui échoue en silence fait perdre du travail : on le dit,
+           et on garde une copie de secours pour l'export. */
+        setEchec(true);
+        try { window.__edngoSecours = donnees; } catch (x) {}
+        setAlerte("ENREGISTREMENT IMPOSSIBLE — le stockage est plein. Exporte tes données "
+          + "immédiatement depuis l'accueil, puis allège tes cartes au stylet.");
+      }
     }, 500);
     return () => clearTimeout(t);
   }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances, pret]);
@@ -4430,6 +4504,16 @@ function App() {
           style={{ background: "#33261A", color: T.ink }}>{alerte} ✕</button>
       )}
 
+      {echec && (
+        <div style={{ position: "sticky", top: 0, zIndex: 45, background: T.bas, padding: "10px 16px" }}>
+          <p className="text-xs" style={{ color: "#0E1A29", fontWeight: 700, lineHeight: 1.5 }}>
+            Tes modifications ne sont plus enregistrées : le stockage du navigateur est plein
+            ({Math.round(poids / 1024)} Ko). Exporte tes données depuis l'accueil, puis supprime
+            ou allège quelques cartes au stylet.
+          </p>
+        </div>
+      )}
+
       <div className="flex">
       {!session && !dossierActif && (
         <nav className="hidden lg:flex flex-col gap-1 shrink-0 py-5 px-2 sticky"
@@ -4471,6 +4555,10 @@ function App() {
             resultats={resultats.filter((r) => r.itemId === item.id)}
             seances={seances.filter((x) => x.itemId === item.id)}
             onSeance={(x) => setSeances((l) => [...l, { ...x, id: uid(), itemId: item.id }])}
+            dejaMises={erreurs.filter((e) => e.qcm).map((e) => e.qcm.enonce)}
+            onErreurQcm={(q) => setErreurs((l) => [...l, {
+              id: uid(), texte: q.enonce, itemId: item.id, date: auj(), qcm: q,
+            }])}
             onResume={(v) => setItems((l) => l.map((i) => i.id === item.id ? { ...i, resume: v } : i))}
             onAjoutCarte={(c) => setCartes((l) => [...l, { ...c, id: uid(), itemId: item.id }])}
             onSupprCarte={(id) => setCartes((l) => l.filter((x) => x.id !== id))}
@@ -4519,7 +4607,8 @@ function App() {
           <MyCards fiches={fiches} onMaj={setFiches} items={items} colleges={colleges}
             onOuvrirItem={(id) => { const it = items.find((x) => x.id === id); setVue("colleges"); setCollegeId(it.collegeId); setItemId(id); }} />
         ) : vue === "resultats" ? (
-          <Resultats items={items} colleges={colleges} resultats={resultats} annales={annales} cartes={cartes} qcms={qcms} />
+          <Resultats items={items} colleges={colleges} resultats={resultats} annales={annales}
+            cartes={cartes} qcms={qcms} seances={seances} />
         ) : vue === "erreurs" ? (
           <Erreurs erreurs={erreurs} items={items}
             onAjouter={(texte, itemId) => setErreurs((l) => [{ id: uid(), texte, itemId, date: auj() }, ...l])}
@@ -5612,7 +5701,7 @@ function ListeItems({ items, scores, colleges, cartes = [], qcms = [], onOuvrir 
 /* ================== un item ================== */
 function VueItem({ item, college, score, cartes, qcms, annales, resultats, onResume, onAjoutCarte, onSupprCarte,
   onAjoutQcm, onSupprQcm, onAjoutAnnale, onSupprAnnale, onNoter, onSession, onTour, onAnnulerTour, onNiveau,
-  seances = [], onSeance,
+  seances = [], onSeance, onErreurQcm, dejaMises = [],
   fiches = [], onFiches }) {
   const nbFiches = fiches.filter((x) => x.itemId === item.id).length;
   const tours = item.tours || [];
@@ -5741,7 +5830,7 @@ function VueItem({ item, college, score, cartes, qcms, annales, resultats, onRes
         {volet === "flash" && <Flashcards cartes={cartes} onAjouter={onAjoutCarte} onSupprimer={onSupprCarte} onNoter={onNoter} resume={item.resume}
             onIA={(g) => { setGenreIA(g); setVolet("ia"); }} />}
         {volet === "qcm" && <BanqueQcm qcms={qcms} onAjouter={onAjoutQcm} onSupprimer={onSupprQcm} onNoter={onNoter}
-          onSeance={onSeance}
+          onSeance={onSeance} onErreurQcm={onErreurQcm}
             onIA={(g) => { setGenreIA(g); setVolet("ia"); }} />}
         {volet === "fiches" && <FichesItem fiches={fiches} onMaj={onFiches} item={item} />}
         {volet === "ia" && (
@@ -5750,7 +5839,8 @@ function VueItem({ item, college, score, cartes, qcms, annales, resultats, onRes
         )}
         {volet === "annales" && <Annales annales={annales} onAjouter={onAjoutAnnale} onSupprimer={onSupprAnnale} />}
         {volet === "progression" && (revue
-          ? <RevueSeance seance={revue} onFermer={() => setRevue(null)} />
+          ? <RevueSeance seance={revue} onFermer={() => setRevue(null)}
+              onErreurQcm={onErreurQcm} dejaMises={dejaMises} />
           : <Progression resultats={resultats} seances={seances} onOuvrirSeance={setRevue} />)}
       </div>
     </div>
@@ -6020,7 +6110,7 @@ function Flashcards({ cartes, onAjouter, onSupprimer, onNoter, resume, onIA }) {
 
 /* ================== QCM ================== */
 const LETTRES = ["A", "B", "C", "D", "E"];
-function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA, onSeance }) {
+function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA, onSeance, onErreurQcm }) {
   const [mode, setMode] = useState("liste");
   const [enonce, setEnonce] = useState("");
   const [props, setProps] = useState(LETTRES.map(() => ({ txt: "", vrai: false })));
@@ -6033,6 +6123,8 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA, onSeance }) {
   const [reglage, setReglage] = useState(false);
   const [journal, setJournal] = useState([]);
   const [bilan, setBilan] = useState(null);
+  const [deplie, setDeplie] = useState(null);
+  const [misesDeCote, setMisesDeCote] = useState([]);
 
   /* Chaque séance tire un paquet au hasard : ni le même ordre, ni les mêmes
      questions d'une fois sur l'autre. */
@@ -6041,7 +6133,7 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA, onSeance }) {
     setPaquet(combien ? melange.slice(0, combien) : melange);
     setGraine(Math.floor(Math.random() * 1e9));
     setN(0); setChoix([]); setCorrige(false); setReglage(false);
-    setJournal([]); setBilan(null); setMode("reviser");
+    setJournal([]); setBilan(null); setDeplie(null); setMisesDeCote([]); setMode("reviser");
   };
   const [saisie, setSaisie] = useState("");
 
@@ -6075,28 +6167,74 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA, onSeance }) {
             </p>
           </div>
 
-          <p className="text-xs uppercase mb-2" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Détail</p>
-          {bilan.detail.map((x, k) => (
-            <div key={k} className="flex items-center gap-3 mb-2"
-              style={{ background: T.card, borderRadius: 14, padding: "11px 14px",
-                borderLeft: `4px solid ${x.disc === 0 ? T.haut : x.disc <= 2 ? T.moyen : T.bas}` }}>
-              <span className="shrink-0 text-xs" style={{ width: 22, color: T.ink2, fontWeight: 700 }}>{k + 1}</span>
-              <span className="flex-1 min-w-0 text-xs truncate">{x.enonce}</span>
-              <span className="shrink-0 text-xs" style={{ color: T.ink2 }}>
-                {x.disc} disc.
-              </span>
-              <span className="shrink-0 text-xs" style={{ width: 34, textAlign: "right", fontWeight: 800,
-                color: x.pts === 1 ? T.haut : x.pts > 0 ? T.moyen : T.bas }}>
-                {x.pts}
-              </span>
-            </div>
-          ))}
+          <p className="text-xs uppercase mb-1" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Détail</p>
+          <p className="text-xs mb-3" style={{ color: T.ink2, lineHeight: 1.6 }}>
+            Appuie sur une question pour la revoir en entier. Le drapeau la met de côté
+            dans l'onglet Erreurs, avec sa correction.
+          </p>
 
-          <button onClick={() => { setMode("liste"); setBilan(null); setN(0); }}
-            className="w-full py-3.5 mt-4 doux"
-            style={{ background: T.accent, color: "#fff", borderRadius: 999, fontWeight: 700 }}>
-            Terminer
-          </button>
+          {bilan.detail.map((x, k) => {
+            const ouvert = deplie === k;
+            const mise = misesDeCote.includes(k);
+            return (
+              <div key={k} className="mb-2" style={{ background: T.card, borderRadius: 14, overflow: "hidden",
+                borderLeft: `4px solid ${x.disc === 0 ? T.haut : x.disc <= 2 ? T.moyen : T.bas}` }}>
+                <div className="flex items-center gap-3" style={{ padding: "11px 14px" }}>
+                  <button onClick={() => setDeplie(ouvert ? null : k)} className="flex-1 min-w-0 text-left flex items-center gap-3">
+                    <span className="shrink-0 text-xs" style={{ width: 22, color: T.ink2, fontWeight: 700 }}>{k + 1}</span>
+                    <span className="flex-1 min-w-0 text-xs" style={{ lineHeight: 1.4,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: ouvert ? "normal" : "nowrap" }}>
+                      {x.enonce}
+                    </span>
+                  </button>
+                  <span className="shrink-0 text-xs" style={{ color: T.ink2 }}>{x.disc} disc.</span>
+                  <span className="shrink-0 text-xs" style={{ width: 30, textAlign: "right", fontWeight: 800,
+                    color: x.pts === 1 ? T.haut : x.pts > 0 ? T.moyen : T.bas }}>{x.pts}</span>
+                  <button onClick={() => {
+                    if (mise) return;
+                    setMisesDeCote((l) => [...l, k]);
+                    if (onErreurQcm) onErreurQcm(x);
+                  }} aria-label="Mettre de côté dans Erreurs"
+                    className="shrink-0 flex items-center justify-center doux"
+                    style={{ width: 30, height: 30, borderRadius: 999,
+                      background: mise ? T.moyen : "transparent",
+                      border: `1px solid ${mise ? T.moyen : T.line}`,
+                      color: mise ? "#0E1A29" : T.ink2, fontSize: 14 }}>
+                    {mise ? "✓" : "⚑"}
+                  </button>
+                </div>
+
+                {ouvert && (
+                  <div className="vue" style={{ background: T.paper, padding: "12px 14px" }}>
+                    {(x.props || []).map((p, i) => (
+                      <Proposition key={i} p={p} i={i} choisi={p.coche} corrige onClic={() => {}} />
+                    ))}
+                    {x.explication && (
+                      <Correction juste={x.disc === 0} texte={x.explication} props={x.props}
+                        choix={(x.props || []).map((p, i) => (p.coche ? i : -1)).filter((i) => i >= 0)} />
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          <div className="flex gap-2 mt-4">
+            <button onClick={() => {
+              const aFaire = bilan.detail.map((x, k) => k).filter((k) => !misesDeCote.includes(k) && bilan.detail[k].disc > 0);
+              if (!aFaire.length || !onErreurQcm) return;
+              aFaire.forEach((k) => onErreurQcm(bilan.detail[k]));
+              setMisesDeCote((l) => [...l, ...aFaire]);
+            }} className="flex-1 py-3.5 doux"
+              style={{ background: T.moyen, color: "#0E1A29", borderRadius: 999, fontWeight: 700, fontSize: 13 }}>
+              Mettre de côté toutes les ratées
+            </button>
+            <button onClick={() => { setMode("liste"); setBilan(null); setN(0); setDeplie(null); setMisesDeCote([]); }}
+              className="flex-1 py-3.5 doux"
+              style={{ background: T.accent, color: "#fff", borderRadius: 999, fontWeight: 700 }}>
+              Terminer
+            </button>
+          </div>
           <p className="text-xs mt-3" style={{ color: T.ink2, lineHeight: 1.7 }}>
             Barème : aucune discordance 1 point, une discordance 0,5, deux discordances 0,2, au-delà 0.
           </p>
@@ -6588,8 +6726,9 @@ function Progression({ resultats, seances = [], onOuvrirSeance }) {
 }
 
 /* revue d'une séance passée : on revoit chaque question et ses discordances */
-function RevueSeance({ seance, onFermer }) {
+function RevueSeance({ seance, onFermer, onErreurQcm, dejaMises = [] }) {
   const [filtre, setFiltre] = useState("rates");
+  const [mises, setMises] = useState([]);
   const detail = seance.detail || [];
   const liste = filtre === "rates" ? detail.filter((q) => q.disc > 0) : detail;
 
@@ -6626,6 +6765,20 @@ function RevueSeance({ seance, onFermer }) {
               background: q.disc === 0 ? T.haut : q.disc <= 2 ? T.moyen : T.bas, color: "#0E1A29" }}>
               {q.pts} pt
             </span>
+            {onErreurQcm && (() => {
+              const mise = mises.includes(q.enonce) || dejaMises.includes(q.enonce);
+              return (
+                <button onClick={() => { if (mise) return; setMises((l) => [...l, q.enonce]); onErreurQcm(q); }}
+                  aria-label="Mettre de côté dans Erreurs"
+                  className="shrink-0 flex items-center justify-center doux"
+                  style={{ width: 30, height: 30, borderRadius: 999,
+                    background: mise ? T.moyen : "transparent",
+                    border: `1px solid ${mise ? T.moyen : T.line}`,
+                    color: mise ? "#0E1A29" : T.ink2, fontSize: 14 }}>
+                  {mise ? "✓" : "⚑"}
+                </button>
+              );
+            })()}
           </div>
           {(q.props || []).map((p, i) => (
             <Proposition key={i} p={p} i={i} choisi={p.coche} corrige onClic={() => {}} />
@@ -6640,11 +6793,13 @@ function RevueSeance({ seance, onFermer }) {
 
 function Erreurs({ erreurs, items, onAjouter, onSupprimer, onOuvrir }) {
   const [texte, setTexte] = useState(""); const [lien, setLien] = useState("");
+  const [filtre, setFiltre] = useState("tout");
+  const [deplie, setDeplie] = useState(null);
   return (
     <div>
       <h2 className="text-2xl mb-1" style={{ fontFamily: serif }}>Mes erreurs</h2>
       <p className="text-xs mb-4" style={{ color: T.ink2 }}>
-        Ton brouillon. Tout ce que tu rates, en vrac, sans avoir à choisir un item. Tu pourras le rattacher plus tard.
+        Tes QCM ratés mis de côté, et tes notes en vrac. Depuis le bilan d'une séance, le drapeau envoie une question ici avec sa correction.
       </p>
       <textarea value={texte} onChange={(e) => setTexte(e.target.value)} rows={3}
         placeholder="Ce que j'ai raté, et pourquoi." className="w-full p-3 rounded text-sm mb-2"
@@ -6661,25 +6816,70 @@ function Erreurs({ erreurs, items, onAjouter, onSupprimer, onOuvrir }) {
           className="px-4 py-2 rounded text-sm" style={{ background: texte.trim() ? T.ink : T.line, color: T.card }}>Noter</button>
       </div>
 
-      {erreurs.length === 0 ? (
-        <p className="text-sm" style={{ color: T.ink2 }}>Rien encore. Cette page se remplit toute seule au fil des annales.</p>
-      ) : (
-        <ul>{erreurs.map((e) => {
-          const it = items.find((i) => i.id === e.itemId);
-          return (
-            <li key={e.id} className="py-3 flex gap-3" style={{ borderBottom: `1px solid ${T.line}` }}>
-              <span className="flex-1">
-                <span className="text-sm" style={{ lineHeight: 1.6 }}>{e.texte}</span>
-                <span className="block text-xs mt-1" style={{ color: T.ink2 }}>
-                  {e.date}
-                  {it && <> · <button onClick={() => onOuvrir(it.id)} style={{ color: T.accent }}>item {it.numero}</button></>}
-                </span>
-              </span>
-              <button onClick={() => onSupprimer(e.id)} className="text-xs px-1" style={{ color: T.bas }}>×</button>
-            </li>
-          );
-        })}</ul>
-      )}
+      {(() => {
+        const qcmsRates = erreurs.filter((e) => e.qcm);
+        const notes = erreurs.filter((e) => !e.qcm);
+        const vus = filtre === "qcm" ? qcmsRates : filtre === "notes" ? notes : erreurs;
+
+        if (!erreurs.length) return (
+          <p className="text-sm" style={{ color: T.ink2, lineHeight: 1.7 }}>
+            Rien encore. Écris une note ci-dessus, ou mets un QCM de côté depuis
+            le bilan de fin de séance en appuyant sur le drapeau.
+          </p>
+        );
+
+        return (
+          <>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {[["tout", `Tout (${erreurs.length})`], ["qcm", `QCM ratés (${qcmsRates.length})`],
+                ["notes", `Mes notes (${notes.length})`]].map(([v, l]) => (
+                <button key={v} onClick={() => setFiltre(v)} className="px-4 py-2 text-xs doux"
+                  style={{ borderRadius: 999, fontWeight: 600,
+                    background: filtre === v ? T.accent : T.accentPale, color: filtre === v ? "#fff" : T.accent }}>{l}</button>
+              ))}
+            </div>
+
+            {vus.map((e) => {
+              const it = items.find((i) => i.id === e.itemId);
+              const ouvert = deplie === e.id;
+              return (
+                <div key={e.id} className="mb-2" style={{ background: T.card, borderRadius: 16, overflow: "hidden",
+                  borderLeft: `4px solid ${e.qcm ? (e.qcm.disc > 2 ? T.bas : T.moyen) : T.line}` }}>
+                  <div className="flex items-start gap-3" style={{ padding: "13px 15px" }}>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm" style={{ lineHeight: 1.5 }}>{e.texte}</span>
+                      <span className="block text-xs mt-1" style={{ color: T.ink2 }}>
+                        {dCourte(e.date) || e.date}
+                        {e.qcm && ` · ${e.qcm.disc} discordance(s) · ${e.qcm.pts} pt`}
+                        {it && <> · <button onClick={() => onOuvrir(it.id)} style={{ color: T.accent }}>item {it.numero}</button></>}
+                      </span>
+                    </span>
+                    {e.qcm && (
+                      <button onClick={() => setDeplie(ouvert ? null : e.id)} className="shrink-0 text-xs px-3 py-1.5 doux"
+                        style={{ borderRadius: 999, background: T.accentPale, color: T.accent, fontWeight: 600 }}>
+                        {ouvert ? "Masquer" : "Revoir"}
+                      </button>
+                    )}
+                    <button onClick={() => onSupprimer(e.id)} className="text-sm px-1 shrink-0" style={{ color: T.bas }}>×</button>
+                  </div>
+
+                  {ouvert && e.qcm && (
+                    <div className="vue" style={{ background: T.paper, padding: "12px 15px" }}>
+                      {(e.qcm.props || []).map((p, i) => (
+                        <Proposition key={i} p={p} i={i} choisi={p.coche} corrige onClic={() => {}} />
+                      ))}
+                      {e.qcm.explication && (
+                        <Correction juste={e.qcm.disc === 0} texte={e.qcm.explication} props={e.qcm.props}
+                          choix={(e.qcm.props || []).map((p, i) => (p.coche ? i : -1)).filter((i) => i >= 0)} />
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        );
+      })()}
     </div>
   );
 }
