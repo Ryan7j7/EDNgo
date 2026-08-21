@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v53";
+const VERSION = "v54";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -6019,16 +6019,27 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
   const [reponse, setReponse] = useState(""); const [cles, setCles] = useState("");
   const [n, setN] = useState(0); const [choix, setChoix] = useState([]); const [corrige, setCorrige] = useState(false);
   const [graine, setGraine] = useState(0);
-  const demarrer = () => { setGraine(Math.floor(Math.random() * 1e9)); setN(0); setChoix([]); setCorrige(false); setMode("reviser"); };
+  const [paquet, setPaquet] = useState([]);
+  const [reglage, setReglage] = useState(false);
+
+  /* Chaque séance tire un paquet au hasard : ni le même ordre, ni les mêmes
+     questions d'une fois sur l'autre. */
+  const demarrer = (combien) => {
+    const melange = [...qcms].sort(() => Math.random() - 0.5);
+    setPaquet(combien ? melange.slice(0, combien) : melange);
+    setGraine(Math.floor(Math.random() * 1e9));
+    setN(0); setChoix([]); setCorrige(false); setReglage(false); setMode("reviser");
+  };
   const [saisie, setSaisie] = useState("");
 
   if (mode === "reviser") {
-    const q = qcms[n]; if (!q) return null;
+    const liste = paquet.length ? paquet : qcms;
+    const q = liste[n]; if (!q) return null;
     if (q.type === "qroc") {
       return (
-        <Qroc key={q.id || n} q={q} n={n} total={qcms.length}
+        <Qroc key={q.id || n} q={q} n={n} total={liste.length}
           onNoter={(v) => onNoter(v, "qroc")}
-          onSuivant={() => { if (n + 1 >= qcms.length) { setMode("liste"); setN(0); } else setN(n + 1); }}
+          onSuivant={() => { if (n + 1 >= liste.length) { setMode("liste"); setN(0); } else setN(n + 1); }}
           onQuitter={() => { setMode("liste"); setN(0); }} />
       );
     }
@@ -6038,9 +6049,9 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
       <div>
         <div className="flex items-center gap-3 mb-4">
           <div className="flex-1 h-1.5 rounded-full" style={{ background: "#1E3149" }}>
-            <div className="doux h-1.5 rounded-full" style={{ width: ((n + (corrige ? 1 : 0)) / qcms.length) * 100 + "%", background: T.accent }} />
+            <div className="doux h-1.5 rounded-full" style={{ width: ((n + (corrige ? 1 : 0)) / liste.length) * 100 + "%", background: T.accent }} />
           </div>
-          <span className="text-xs" style={{ color: T.ink2, fontWeight: 600 }}>{n + 1}/{qcms.length}</span>
+          <span className="text-xs" style={{ color: T.ink2, fontWeight: 600 }}>{n + 1}/{liste.length}</span>
           <button onClick={() => { setMode("liste"); setN(0); setChoix([]); setCorrige(false); }}
             className="text-xs" style={{ color: T.ink2 }}>✕</button>
         </div>
@@ -6062,9 +6073,9 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
               Valider
             </button>
           ) : (
-            <button onClick={() => { if (n + 1 >= qcms.length) { setMode("liste"); setN(0); } else setN(n + 1); setChoix([]); setCorrige(false); }}
+            <button onClick={() => { if (n + 1 >= liste.length) { setMode("liste"); setN(0); } else setN(n + 1); setChoix([]); setCorrige(false); }}
               className="w-full py-3.5 text-sm doux" style={{ background: T.ink, color: "#fff", borderRadius: 999, fontWeight: 600 }}>
-              {n + 1 >= qcms.length ? "Terminer" : "Question suivante"}
+              {n + 1 >= liste.length ? "Terminer" : "Question suivante"}
             </button>
           )}
         </div>
@@ -6134,10 +6145,40 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA }) {
     <div>
       <div className="flex gap-2 mb-4">
         <button onClick={() => setMode("creer")} className="px-4 py-2.5 text-sm doux" style={{ background: T.accent, color: "#fff", borderRadius: 999, fontWeight: 600 }}>Nouveau QCM</button>
-        {qcms.length > 0 && <button onClick={demarrer} className="px-4 py-2.5 text-sm doux" style={{ border: `1px solid ${T.line}`, borderRadius: 999, fontWeight: 600, color: T.ink }}>Se tester</button>}
+        {qcms.length > 0 && (
+          <button onClick={() => (qcms.length > 10 ? setReglage(!reglage) : demarrer(0))}
+            className="px-4 py-2.5 text-sm doux"
+            style={{ border: `1px solid ${reglage ? T.accent : T.line}`, borderRadius: 999, fontWeight: 600,
+              color: reglage ? T.accent : T.ink, background: reglage ? T.accentPale : "transparent" }}>
+            Se tester{qcms.length > 10 ? " ▾" : ""}
+          </button>
+        )}
         {onIA && <button onClick={() => onIA("qcm")} className="px-4 py-2.5 text-sm doux"
           style={{ background: T.accentPale, color: T.accent, borderRadius: 999, fontWeight: 600 }}>Générer</button>}
       </div>
+      {reglage && qcms.length > 10 && (
+        <div className="ombre mb-4 vue" style={{ background: T.card, borderRadius: 20, padding: "16px 18px" }}>
+          <p className="text-xs uppercase mb-1" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+            Combien de questions
+          </p>
+          <p className="text-xs mb-3" style={{ color: T.ink2, lineHeight: 1.6 }}>
+            Elles sont tirées au hasard parmi les {qcms.length} disponibles, dans un ordre
+            différent à chaque séance.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {[5, 10, 15, 20, 30].filter((k) => k < qcms.length).concat([qcms.length]).map((k) => (
+              <button key={k} onClick={() => demarrer(k)} className="px-5 py-3 text-sm doux"
+                style={{ borderRadius: 16, fontWeight: 700,
+                  background: k === qcms.length ? T.accentPale : T.accent,
+                  color: k === qcms.length ? T.accent : "#fff", minWidth: 74 }}>
+                {k === qcms.length ? "Toutes" : k}
+                {k === qcms.length && <span className="block text-xs" style={{ fontWeight: 500 }}>{k}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {qcms.length === 0 ? (
         <p className="text-sm" style={{ color: T.ink2 }}>Aucun QCM. Le bon moment pour en écrire un : juste après avoir raté la question.</p>
       ) : (
