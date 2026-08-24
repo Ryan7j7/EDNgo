@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v57";
+const VERSION = "v58";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1000,11 +1000,45 @@ const nouvelleFiche = (type, itemId, collegeId) => ({
 const BDD = "edngo-docs";
 function ouvrirBdd() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open(BDD, 1);
-    r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains("docs")) r.result.createObjectStore("docs"); };
+    const r = indexedDB.open(BDD, 2);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains("docs")) db.createObjectStore("docs");
+      /* Les cartes au stylet vivent désormais ici : IndexedDB offre plusieurs
+         centaines de mégaoctets, contre environ cinq pour le stockage simple. */
+      if (!db.objectStoreNames.contains("lourd")) db.createObjectStore("lourd");
+    };
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
   });
+}
+
+async function poserLourd(cle, valeur) {
+  const db = await ouvrirBdd();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("lourd", "readwrite");
+    tx.objectStore("lourd").put(valeur, cle);
+    tx.oncomplete = () => res(true); tx.onerror = () => rej(tx.error);
+  });
+}
+async function prendreLourd(cle) {
+  const db = await ouvrirBdd();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("lourd", "readonly");
+    const q = tx.objectStore("lourd").get(cle);
+    q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
+  });
+}
+
+/* place occupée et place disponible, telles que le navigateur les rapporte */
+async function placeDisponible() {
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const e = await navigator.storage.estimate();
+      return { utilise: e.usage || 0, total: e.quota || 0 };
+    }
+  } catch (x) {}
+  return null;
 }
 async function poserDoc(id, blob) {
   const db = await ouvrirBdd();
@@ -4074,6 +4108,7 @@ function App() {
   const [seances, setSeances] = useState([]);
   const [echec, setEchec] = useState(false);
   const [poids, setPoids] = useState(0);
+  const [place, setPlace] = useState(null);
   const [dossierActif, setDossierActif] = useState(null);
   const [pret, setPret] = useState(false);
   const [alerte, setAlerte] = useState(null);
@@ -4086,6 +4121,8 @@ function App() {
   const [menu, setMenu] = useState(false);
   const premier = useRef(true);
 
+  useEffect(() => { placeDisponible().then((p) => p && setPlace(p)); }, []);
+
   useEffect(() => {
     (async () => {
       try {
@@ -4096,7 +4133,13 @@ function App() {
         setAnnales(d.annales || []); setResultats(d.resultats || []);
         setErreurs(d.erreurs || []);
         if (d.cours?.length) setCours(d.cours);
-        setFiches(d.fiches || []);
+        /* les fiches sont désormais dans la grande réserve ; on reprend celles
+           restées dans l'ancien emplacement, puis on les y déplace */
+        let f = [];
+        try { f = (await prendreLourd("fiches")) || []; } catch (x) {}
+        const anciennes = d.fiches || [];
+        if (anciennes.length && !f.length) { f = anciennes; try { await poserLourd("fiches", f); } catch (x) {} }
+        setFiches(f);
         setTaches(d.taches || []);
         setDossiers(d.dossiers || []);
         setSeances(d.seances || []);
@@ -4183,12 +4226,18 @@ function App() {
     if (!pret) return;
     if (premier.current) { premier.current = false; return; }
     const t = setTimeout(async () => {
+      /* Les cartes au stylet partent dans IndexedDB, qui dispose de centaines de
+         mégaoctets. Le reste, léger, reste dans le stockage simple. */
+      let fichesOk = true;
+      try { await poserLourd("fiches", fiches); } catch (e) { fichesOk = false; }
+
       const donnees = JSON.stringify({ colleges, items, cartes, qcms, annales, resultats,
-        erreurs, cours, fiches, taches, dossiers, seances });
+        erreurs, cours, taches, dossiers, seances, fiches: [] });
       setPoids(donnees.length);
       try {
         await window.storage.set(KEY, donnees);
-        setEchec(false);
+        setEchec(!fichesOk);
+        placeDisponible().then((p) => p && setPlace(p));
       } catch (e) {
         /* Une sauvegarde qui échoue en silence fait perdre du travail : on le dit,
            et on garde une copie de secours pour l'export. */
@@ -4314,7 +4363,8 @@ function App() {
   };
 
   const exporter = () => {
-    const b = new Blob([JSON.stringify({ colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances }, null, 2)], { type: "application/json" });
+    const b = new Blob([JSON.stringify({ colleges, items, cartes, qcms, annales, resultats,
+      erreurs, cours, fiches, taches, dossiers, seances }, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b); a.download = `edn-go-${VERSION}-${auj()}.json`; a.click();
     URL.revokeObjectURL(a.href);
@@ -4507,9 +4557,8 @@ function App() {
       {echec && (
         <div style={{ position: "sticky", top: 0, zIndex: 45, background: T.bas, padding: "10px 16px" }}>
           <p className="text-xs" style={{ color: "#0E1A29", fontWeight: 700, lineHeight: 1.5 }}>
-            Tes modifications ne sont plus enregistrées : le stockage du navigateur est plein
-            ({Math.round(poids / 1024)} Ko). Exporte tes données depuis l'accueil, puis supprime
-            ou allège quelques cartes au stylet.
+            Tes modifications ne sont plus enregistrées : le stockage du navigateur est plein.
+            Exporte tes données depuis l'accueil, puis supprime quelques cartes au stylet.
           </p>
         </div>
       )}
@@ -4622,7 +4671,7 @@ function App() {
             nbExos={cartes.length + qcms.length} nbAnnales={annales.length}
             onSession={lancerSessionFaible} onSessionCollege={lancerSessionCollege}
             revision={revision} onRevision={lancerRevision}
-            rattrapage={rattrapage} onRattrapage={lancerRattrapage}
+            rattrapage={rattrapage} onRattrapage={lancerRattrapage} place={place} poidsAffiche={echec}
             onLancerPaquet={(p) => setSession(p)}
             onGrille={() => setVue("grille")} onExporter={exporter} onImporter={importer} />
         )}
@@ -4766,7 +4815,7 @@ function Selecteur({ items, colleges, cartes, qcms, onLancer, onFermer }) {
 
 function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, onOuvrirItem,
   testes, solides, jours, nbExos, nbAnnales, onSession, onSessionCollege, revision, onRevision,
-  rattrapage, onRattrapage, onGrille, onExporter, onImporter, onLancerPaquet }) {
+  rattrapage, onRattrapage, onGrille, onExporter, onImporter, onLancerPaquet, place, poidsAffiche }) {
   const [lca, setLca] = useState(false);
   useEffect(() => { setLca(lcaDu()); }, []);
   const onLca = () => { noterLca(); setLca(false); };
@@ -4912,6 +4961,26 @@ function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, 
               : `Rien d'échu · ${revision.neufs.length} exercice(s) jamais vus`}
           </div>
         </button>
+      )}
+
+      {place && place.total > 0 && (place.utilise / place.total > 0.6 || poidsAffiche) && (
+        <div className="mb-3" style={{ background: T.card, borderRadius: 18, padding: "13px 15px" }}>
+          <div className="flex items-baseline justify-between mb-2">
+            <span className="text-xs uppercase" style={{ letterSpacing: "0.1em", color: T.ink2 }}>Espace utilisé</span>
+            <span className="text-xs" style={{ color: place.utilise / place.total > 0.85 ? T.bas : T.ink2, fontWeight: 700 }}>
+              {(place.utilise / 1048576).toFixed(0)} Mo sur {(place.total / 1048576).toFixed(0)} Mo
+            </span>
+          </div>
+          <div className="h-2 rounded-full" style={{ background: "#152438" }}>
+            <div className="doux h-2 rounded-full" style={{
+              width: Math.min(100, (place.utilise / place.total) * 100) + "%",
+              background: place.utilise / place.total > 0.85 ? T.bas : place.utilise / place.total > 0.6 ? T.moyen : T.haut }} />
+          </div>
+          <p className="text-xs mt-2" style={{ color: T.ink2, lineHeight: 1.6 }}>
+            Les cartes au stylet occupent l'essentiel de la place. Exporte régulièrement,
+            et supprime les cartes dont tu n'as plus besoin.
+          </p>
+        </div>
       )}
 
       {rappel && (
