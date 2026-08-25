@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v59";
+const VERSION = "v60";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -6260,6 +6260,8 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA, onSeance, onEr
   const [graine, setGraine] = useState(0);
   const [paquet, setPaquet] = useState([]);
   const [reglage, setReglage] = useState(false);
+  const [menage, setMenage] = useState(false);
+  const [coches, setCoches] = useState([]);
   const [journal, setJournal] = useState([]);
   const [bilan, setBilan] = useState(null);
   const [deplie, setDeplie] = useState(null);
@@ -6509,6 +6511,32 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA, onSeance, onEr
         {onIA && <button onClick={() => onIA("qcm")} className="px-4 py-2.5 text-sm doux"
           style={{ background: T.accentPale, color: T.accent, borderRadius: 999, fontWeight: 600 }}>Générer</button>}
       </div>
+      {qcms.length > 0 && (
+        <div className="flex items-center gap-2 mb-3">
+          <button onClick={() => { setMenage(!menage); setCoches([]); }} className="text-xs px-3 py-1.5 doux"
+            style={{ borderRadius: 999, border: `1px solid ${menage ? T.bas : T.line}`,
+              color: menage ? T.bas : T.ink2, fontWeight: 600 }}>
+            {menage ? "Annuler" : "Supprimer plusieurs"}
+          </button>
+          {menage && (
+            <>
+              <button onClick={() => setCoches(coches.length === qcms.length ? [] : qcms.map((x) => x.id))}
+                className="text-xs px-3 py-1.5 doux" style={{ borderRadius: 999, color: T.accent }}>
+                {coches.length === qcms.length ? "Tout décocher" : "Tout cocher"}
+              </button>
+              <div className="flex-1" />
+              <button disabled={!coches.length}
+                onClick={() => { coches.forEach((id) => onSupprimer(id)); setCoches([]); setMenage(false); }}
+                className="text-xs px-4 py-1.5 doux"
+                style={{ borderRadius: 999, background: coches.length ? T.bas : "#24384F",
+                  color: coches.length ? "#0E1A29" : T.ink2, fontWeight: 700 }}>
+                Supprimer {coches.length || ""}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {reglage && qcms.length > 10 && (
         <div className="ombre mb-4 vue" style={{ background: T.card, borderRadius: 20, padding: "16px 18px" }}>
           <p className="text-xs uppercase mb-1" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
@@ -6535,15 +6563,27 @@ function BanqueQcm({ qcms, onAjouter, onSupprimer, onNoter, onIA, onSeance, onEr
       {qcms.length === 0 ? (
         <p className="text-sm" style={{ color: T.ink2 }}>Aucun QCM. Le bon moment pour en écrire un : juste après avoir raté la question.</p>
       ) : (
-        <ul>{qcms.map((q) => (
-          <li key={q.id} className="py-2 flex gap-3 text-sm" style={{ borderBottom: `1px solid ${T.line}` }}>
-            <span className="flex-1">{q.enonce}</span>
-            <span className="text-xs shrink-0" style={{ color: T.ink2 }}>
-              {q.type === "qroc" ? "rédigée" : (q.props || []).length + " prop."}
-            </span>
-            <button onClick={() => onSupprimer(q.id)} className="text-xs px-1" style={{ color: T.bas }}>×</button>
-          </li>
-        ))}</ul>
+        <ul>{qcms.map((q) => {
+          const coche = coches.includes(q.id);
+          return (
+            <li key={q.id} className="py-2 flex items-start gap-3 text-sm"
+              style={{ borderBottom: `1px solid ${T.line}`, background: coche ? "rgba(228,104,93,0.09)" : "transparent" }}>
+              {menage && (
+                <button onClick={() => setCoches(coche ? coches.filter((x) => x !== q.id) : [...coches, q.id])}
+                  className="shrink-0 flex items-center justify-center" style={{ width: 19, height: 19, marginTop: 2,
+                    borderRadius: 5, border: `2px solid ${coche ? T.bas : T.line}`,
+                    background: coche ? T.bas : "transparent", color: "#0E1A29", fontSize: 11, fontWeight: 800 }}>
+                  {coche ? "✓" : ""}
+                </button>
+              )}
+              <span className="flex-1">{q.enonce}</span>
+              <span className="text-xs shrink-0" style={{ color: T.ink2 }}>
+                {q.type === "qroc" ? "rédigée" : (q.props || []).length + " prop."}
+              </span>
+              {!menage && <button onClick={() => onSupprimer(q.id)} className="text-xs px-1" style={{ color: T.bas }}>×</button>}
+            </li>
+          );
+        })}</ul>
       )}
     </div>
   );
