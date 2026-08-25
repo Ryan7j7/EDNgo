@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v60";
+const VERSION = "v61";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -4730,6 +4730,7 @@ function App() {
             cartes={cartes} qcms={qcms} seances={seances} />
         ) : vue === "erreurs" ? (
           <Erreurs erreurs={erreurs} items={items}
+            onModifier={(id, texte) => setErreurs((l) => l.map((e) => e.id === id ? { ...e, texte } : e))}
             onAjouter={(texte, itemId) => setErreurs((l) => [{ id: uid(), texte, itemId, date: auj() }, ...l])}
             onSupprimer={(id) => setErreurs((l) => l.filter((x) => x.id !== id))}
             onOuvrir={(id) => { const it = items.find((x) => x.id === id); setCollegeId(it.collegeId); setItemId(id); }} />
@@ -6970,30 +6971,65 @@ function RevueSeance({ seance, onFermer, onErreurQcm, dejaMises = [] }) {
   );
 }
 
-function Erreurs({ erreurs, items, onAjouter, onSupprimer, onOuvrir }) {
+function Erreurs({ erreurs, items, onAjouter, onModifier, onSupprimer, onOuvrir }) {
   const [texte, setTexte] = useState(""); const [lien, setLien] = useState("");
   const [filtre, setFiltre] = useState("tout");
   const [deplie, setDeplie] = useState(null);
+  const [rech, setRech] = useState("");
+  const [edite, setEdite] = useState(null);
+  const [brouillon, setBrouillon] = useState("");
   return (
     <div>
       <h2 className="text-2xl mb-1" style={{ fontFamily: serif }}>Mes erreurs</h2>
       <p className="text-xs mb-4" style={{ color: T.ink2 }}>
-        Tes QCM ratés mis de côté, et tes notes en vrac. Depuis le bilan d'une séance, le drapeau envoie une question ici avec sa correction.
+        Tes QCM ratés mis de côté, et tes notes en vrac. Appuie sur une note pour la modifier. Depuis le bilan d'une séance, le drapeau envoie une question ici avec sa correction.
       </p>
       <textarea value={texte} onChange={(e) => setTexte(e.target.value)} rows={3}
         placeholder="Ce que j'ai raté, et pourquoi." className="w-full p-3 rounded text-sm mb-2"
         style={{ border: `1px solid ${T.line}`, background: T.card }} />
-      <div className="flex flex-wrap gap-2 mb-6">
-        <select value={lien} onChange={(e) => setLien(e.target.value)} className="px-2 py-2 rounded text-sm flex-1 min-w-40"
-          style={{ border: `1px solid ${T.line}`, background: T.card }}>
-          <option value="">Rattacher à un item (facultatif)</option>
-          {[...items].sort((a, b) => a.numero - b.numero).map((i) => (
-            <option key={i.id} value={i.id}>{i.numero}. {i.titre.slice(0, 60)}</option>
-          ))}
-        </select>
-        <button disabled={!texte.trim()} onClick={() => { onAjouter(texte.trim(), lien || null); setTexte(""); setLien(""); }}
-          className="px-4 py-2 rounded text-sm" style={{ background: texte.trim() ? T.ink : T.line, color: T.card }}>Noter</button>
-      </div>
+      {(() => {
+        const choisi = items.find((i) => i.id === lien);
+        const trouves = rech.trim()
+          ? [...items].filter((i) => correspond(i, rech)).sort((a, b) => a.numero - b.numero).slice(0, 6)
+          : [];
+        return (
+          <div className="mb-6">
+            {choisi ? (
+              <div className="flex items-center gap-2 mb-2">
+                <span className="flex-1 min-w-0 text-xs px-3 py-2"
+                  style={{ background: T.accentPale, borderRadius: 12, color: T.accent }}>
+                  Item {choisi.numero} — {choisi.titre}
+                </span>
+                <button onClick={() => { setLien(""); setRech(""); }} className="text-sm px-2" style={{ color: T.ink2 }}>✕</button>
+              </div>
+            ) : (
+              <>
+                <input value={rech} onChange={(e) => setRech(e.target.value)}
+                  placeholder="Rattacher à un item — tape un numéro ou un mot"
+                  className="w-full px-3 py-2.5 text-sm mb-1"
+                  style={{ borderRadius: 12, border: `1px solid ${T.line}`, background: T.card }} />
+                {trouves.map((i) => (
+                  <button key={i.id} onClick={() => { setLien(i.id); setRech(""); }}
+                    className="w-full text-left flex items-center gap-2 doux mb-1"
+                    style={{ background: T.paper, borderRadius: 10, padding: "8px 10px" }}>
+                    <span className="shrink-0 text-xs" style={{ width: 34, color: T.ink2, fontWeight: 700 }}>{i.numero}</span>
+                    <span className="flex-1 min-w-0 text-xs truncate">{i.titre}</span>
+                  </button>
+                ))}
+                {rech.trim() && !trouves.length && (
+                  <p className="text-xs mb-1" style={{ color: T.ink2 }}>Aucun item ne correspond.</p>
+                )}
+              </>
+            )}
+            <button disabled={!texte.trim()}
+              onClick={() => { onAjouter(texte.trim(), lien || null); setTexte(""); setLien(""); setRech(""); }}
+              className="px-5 py-2.5 text-sm doux"
+              style={{ background: texte.trim() ? T.accent : "#24384F", color: "#fff", borderRadius: 999, fontWeight: 600 }}>
+              Noter
+            </button>
+          </div>
+        );
+      })()}
 
       {(() => {
         const qcmsRates = erreurs.filter((e) => e.qcm);
@@ -7026,11 +7062,29 @@ function Erreurs({ erreurs, items, onAjouter, onSupprimer, onOuvrir }) {
                   borderLeft: `4px solid ${e.qcm ? (e.qcm.disc > 2 ? T.bas : T.moyen) : T.line}` }}>
                   <div className="flex items-start gap-3" style={{ padding: "13px 15px" }}>
                     <span className="flex-1 min-w-0">
-                      <span className="block text-sm" style={{ lineHeight: 1.5 }}>{e.texte}</span>
+                      {edite === e.id && !e.qcm ? (
+                        <>
+                          <textarea autoFocus value={brouillon} onChange={(ev) => setBrouillon(ev.target.value)}
+                            rows={3} className="w-full p-2.5 text-sm mb-2"
+                            style={{ borderRadius: 10, border: `1px solid ${T.accent}`, background: T.paper, lineHeight: 1.6 }} />
+                          <span className="flex gap-2">
+                            <button onClick={() => { if (brouillon.trim() && onModifier) onModifier(e.id, brouillon.trim()); setEdite(null); }}
+                              className="px-4 py-1.5 text-xs doux"
+                              style={{ background: T.accent, color: "#fff", borderRadius: 999, fontWeight: 700 }}>Enregistrer</button>
+                            <button onClick={() => setEdite(null)} className="px-3 py-1.5 text-xs" style={{ color: T.ink2 }}>Annuler</button>
+                          </span>
+                        </>
+                      ) : (
+                        <button onClick={() => { if (!e.qcm) { setEdite(e.id); setBrouillon(e.texte); } }}
+                          className="w-full text-left" style={{ cursor: e.qcm ? "default" : "text" }}>
+                          <span className="block text-sm" style={{ lineHeight: 1.5 }}>{e.texte}</span>
+                        </button>
+                      )}
                       <span className="block text-xs mt-1" style={{ color: T.ink2 }}>
                         {dCourte(e.date) || e.date}
                         {e.qcm && ` · ${e.qcm.disc} discordance(s) · ${e.qcm.pts} pt`}
                         {it && <> · <button onClick={() => onOuvrir(it.id)} style={{ color: T.accent }}>item {it.numero}</button></>}
+                        {!e.qcm && edite !== e.id && <> · <button onClick={() => { setEdite(e.id); setBrouillon(e.texte); }} style={{ color: T.accent }}>modifier</button></>}
                       </span>
                     </span>
                     {e.qcm && (
