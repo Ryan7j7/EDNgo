@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v58";
+const VERSION = "v59";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1922,13 +1922,14 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
   );
 }
 
-function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
+function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, onNote }) {
   const [debutSem, setDebutSem] = useState(() => lundiDe(new Date()));
   const [jour, setJour] = useState(() => iso(new Date()));
   const [creneau, setCreneau] = useState(null);
   const [fin, setFin] = useState(9);
   const [texte, setTexte] = useState("");
   const [selection, setSelection] = useState(null);
+  const [noter, setNoter] = useState(null);
   const [export_, setExport_] = useState(false);
   const [modeles, setModeles] = useState(false);
   const [purge, setPurge] = useState(false);
@@ -2351,7 +2352,14 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
                   style={{ padding: "7px 10px", height: "100%", cursor: "grab" }}>
                   <span className="flex items-start gap-2">
                     <span onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); modifier(t.id, { fait: !t.fait }); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const cocheMaintenant = !t.fait;
+                        modifier(t.id, { fait: cocheMaintenant });
+                        /* Cocher un cours ouvre le panneau de compréhension : on note
+                           à chaud, sans avoir à aller dans la grille. */
+                        if (cocheMaintenant && i) setNoter(t.id);
+                      }}
                       className="shrink-0 flex items-center justify-center"
                       style={{ width: 20, height: 20, borderRadius: 999, marginTop: 1,
                         border: `2px solid ${t.fait ? b.bar : b.fg}`, background: t.fait ? b.bar : "transparent",
@@ -2461,6 +2469,66 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem }) {
       </div>
 
       <div className="lg:w-72 lg:shrink-0 mt-4 lg:mt-0">
+        {(() => {
+          const tache = taches.find((t) => t.id === noter);
+          const item = tache && items.find((x) => x.id === tache.itemId);
+          if (!tache || !item) return null;
+          const col = colleges.find((x) => x.id === item.collegeId);
+          return (
+            <div className="ombre vue mb-3" style={{ background: T.card, borderRadius: 22, padding: "16px 18px" }}>
+              <div className="flex items-start gap-3 mb-3">
+                <span className="flex-1 min-w-0">
+                  <span className="block text-xs uppercase" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+                    Cours terminé
+                  </span>
+                  <span className="block text-sm mt-0.5" style={{ fontWeight: 600, lineHeight: 1.4 }}>
+                    {item.numero}. {item.titre}
+                  </span>
+                  {col && <span className="block text-xs mt-0.5" style={{ color: pal(col.nom).fg }}>{col.nom}</span>}
+                </span>
+                <button onClick={() => setNoter(null)} className="text-sm px-2 shrink-0" style={{ color: T.ink2 }}>✕</button>
+              </div>
+
+              <p className="text-xs mb-2" style={{ color: T.ink2 }}>Comment l'as-tu compris ?</p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {[1, 2, 3, 4].map((k) => {
+                  const N = NIVEAUX_C[k];
+                  const actif = (item.comp || 0) === k;
+                  return (
+                    <button key={k} onClick={() => onComprendre && onComprendre(item.id, k)}
+                      className="doux flex-1 py-2.5 px-2" style={{ minWidth: 92, borderRadius: 14,
+                        background: actif ? N.bord : N.bg, color: actif ? "#0E1A29" : N.fg,
+                        fontWeight: 700, fontSize: 12, border: `1px solid ${actif ? N.bord : "transparent"}` }}>
+                      {N.nom}
+                      <span className="block" style={{ fontSize: 10, fontWeight: 500, opacity: 0.85 }}>
+                        revoir à J{N.jours}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="text-xs mb-1.5" style={{ color: T.ink2 }}>Ce qu'il faut retenir</p>
+              <textarea value={item.note || ""} onChange={(e) => onNote && onNote(item.id, e.target.value)}
+                rows={3} placeholder="Points clés, pièges, ce qui t'a bloqué…"
+                className="w-full p-3 text-sm" style={{ borderRadius: 14, border: `1px solid ${T.line}`,
+                  background: T.paper, lineHeight: 1.6 }} />
+
+              <div className="flex items-center gap-2 mt-3">
+                <button onClick={() => { onOuvrirItem(item.id); setNoter(null); }}
+                  className="text-xs px-3 py-1.5 doux" style={{ borderRadius: 999, color: T.accent }}>
+                  Ouvrir l'item ›
+                </button>
+                <div className="flex-1" />
+                <button onClick={() => setNoter(null)} className="text-xs px-4 py-1.5 doux"
+                  style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 700 }}>
+                  Terminé
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
         <ColonneRevisions items={items} colleges={colleges} jour={jour} taches={taches}
           onOuvrirItem={onOuvrirItem} onPoser={placerRevision} />
       </div>
@@ -4638,6 +4706,8 @@ function App() {
           <Cours cours={cours} onMaj={setCours} />
         ) : vue === "todo" ? (
           <Planning taches={taches} onMaj={majTaches} items={items} colleges={colleges}
+            onComprendre={(id, v) => definirComp(id, v)}
+            onNote={(id, v) => setItems((l) => l.map((i) => i.id === id ? { ...i, note: v } : i))}
             onOuvrirItem={(id) => { const it = items.find((x) => x.id === id); setVue("colleges"); setCollegeId(it.collegeId); setItemId(id); }} />
         ) : vue === "exercice" ? (
           <Exercice items={items} colleges={colleges} cartes={cartes} qcms={qcms} resultats={resultats}
