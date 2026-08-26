@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v61";
+const VERSION = "v63";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -489,7 +489,7 @@ const ONGLETS = [
   ["stats",     "Statistiques", "◫", "Temps et volume", "#8DD16A", "#111F0E"],
   ["horloge",   "Horloge",   "◷", "Minuteur, chrono",   "#7C9BF0", "#101529"],
   ["resultats", "Résultats", "◔", "Mes scores",         "#EFC94C", "#211D0C"],
-  ["erreurs",   "Erreurs",   "!", "Mon brouillon",      "#F08A6A", "#241510"],
+  ["erreurs",   "Erreurs / Mémos", "!", "Ce que je rate, ce que je garde", "#F08A6A", "#241510"],
 ];
 const teinteOnglet = (v) => {
   const o = ONGLETS.find(([x]) => x === v);
@@ -4729,9 +4729,9 @@ function App() {
           <Resultats items={items} colleges={colleges} resultats={resultats} annales={annales}
             cartes={cartes} qcms={qcms} seances={seances} />
         ) : vue === "erreurs" ? (
-          <Erreurs erreurs={erreurs} items={items}
+          <Erreurs erreurs={erreurs} items={items} colleges={colleges}
             onModifier={(id, texte) => setErreurs((l) => l.map((e) => e.id === id ? { ...e, texte } : e))}
-            onAjouter={(texte, itemId) => setErreurs((l) => [{ id: uid(), texte, itemId, date: auj() }, ...l])}
+            onAjouter={(texte, itemId, genre) => setErreurs((l) => [{ id: uid(), texte, itemId, genre: genre || "erreur", date: auj() }, ...l])}
             onSupprimer={(id) => setErreurs((l) => l.filter((x) => x.id !== id))}
             onOuvrir={(id) => { const it = items.find((x) => x.id === id); setCollegeId(it.collegeId); setItemId(id); }} />
         ) : (
@@ -6971,153 +6971,283 @@ function RevueSeance({ seance, onFermer, onErreurQcm, dejaMises = [] }) {
   );
 }
 
-function Erreurs({ erreurs, items, onAjouter, onModifier, onSupprimer, onOuvrir }) {
-  const [texte, setTexte] = useState(""); const [lien, setLien] = useState("");
-  const [filtre, setFiltre] = useState("tout");
-  const [deplie, setDeplie] = useState(null);
+/* Met les erreurs en texte lisible, pour l'application Notes ou n'importe quel
+   autre carnet. Le partage natif d'iOS propose Notes parmi les destinations. */
+function erreursEnTexte(liste, items, titre) {
+  const par = {};
+  liste.forEach((e) => {
+    const it = items.find((i) => i.id === e.itemId);
+    const cle = it ? `Item ${it.numero} — ${it.titre}` : "Sans item rattaché";
+    (par[cle] = par[cle] || []).push(e);
+  });
+  let t = (titre || "MES ERREURS") + " — EDN Go\n" + dCourte(auj()) + "\n";
+  Object.keys(par).sort().forEach((cle) => {
+    t += "\n\n═══ " + cle + " ═══\n";
+    par[cle].forEach((e) => {
+      if (e.qcm) {
+        t += "\n▸ " + e.qcm.enonce + "\n";
+        (e.qcm.props || []).forEach((p) => {
+          const marque = p.vrai && p.coche ? "  ✓ " : p.vrai && !p.coche ? "  ! " : !p.vrai && p.coche ? "  ✗ " : "    ";
+          t += marque + p.txt + "\n";
+        });
+        t += "  (✓ juste · ! oubliée · ✗ cochée à tort)\n";
+        if (e.qcm.explication) t += "  → " + e.qcm.explication + "\n";
+      } else {
+        t += "\n▸ " + e.texte + "\n";
+      }
+    });
+  });
+  return t;
+}
+
+function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onSupprimer, onOuvrir }) {
+  const [section, setSection] = useState("erreurs");
+  const [texte, setTexte] = useState("");
+  const [lien, setLien] = useState("");
   const [rech, setRech] = useState("");
+  const [groupe, setGroupe] = useState("college");
+  const [deplie, setDeplie] = useState(null);
   const [edite, setEdite] = useState(null);
   const [brouillon, setBrouillon] = useState("");
+  const [envoi, setEnvoi] = useState(null);
+
+  /* Une entrée appartient aux erreurs si c'est un QCM raté ou si elle a été
+     écrite dans la section erreurs ; sinon c'est un mémo. */
+  const estErreur = (e) => !!e.qcm || e.genre !== "memo";
+  const visibles = erreurs.filter((e) => (section === "erreurs" ? estErreur(e) : !estErreur(e)));
+
+  const colDe = (e) => {
+    const it = items.find((i) => i.id === e.itemId);
+    if (!it) return null;
+    return colleges.find((c) => c.id === it.collegeId) || null;
+  };
+  const itemDe = (e) => items.find((i) => i.id === e.itemId);
+
+  /* regroupement */
+  const paquets = {};
+  visibles.forEach((e) => {
+    let cle = "Sans rattachement";
+    if (groupe === "college") { const c = colDe(e); if (c) cle = c.nom; }
+    else if (groupe === "item") { const it = itemDe(e); if (it) cle = `${it.numero}. ${it.titre}`; }
+    else cle = dCourte(e.date) || e.date;
+    (paquets[cle] = paquets[cle] || []).push(e);
+  });
+  const cles = Object.keys(paquets).sort((a, b) => {
+    if (a === "Sans rattachement") return 1;
+    if (b === "Sans rattachement") return -1;
+    return groupe === "date" ? b.localeCompare(a) : a.localeCompare(b);
+  });
+
+  const choisi = items.find((i) => i.id === lien);
+  const trouves = rech.trim()
+    ? [...items].filter((i) => correspond(i, rech)).sort((a, b) => a.numero - b.numero).slice(0, 6)
+    : [];
+
+  const ERREUR = { fg: "#F08A6A", bg: "#241510" };
+  const MEMO = { fg: "#7FD8D0", bg: "#0F2E2C" };
+  const teinte = section === "erreurs" ? ERREUR : MEMO;
+
   return (
     <div>
-      <h2 className="text-2xl mb-1" style={{ fontFamily: serif }}>Mes erreurs</h2>
-      <p className="text-xs mb-4" style={{ color: T.ink2 }}>
-        Tes QCM ratés mis de côté, et tes notes en vrac. Appuie sur une note pour la modifier. Depuis le bilan d'une séance, le drapeau envoie une question ici avec sa correction.
+      <h2 className="mb-1" style={{ fontFamily: serif, fontSize: 26 }}>Erreurs / Mémos</h2>
+      <p className="text-xs mb-4" style={{ color: T.ink2, lineHeight: 1.6 }}>
+        {section === "erreurs"
+          ? "Ce que tu rates : QCM mis de côté et notes d'erreur."
+          : "Ce que tu ne veux pas oublier : rappels, astuces, choses à faire."}
       </p>
+
+      {/* deux sections distinctes */}
+      <div className="flex gap-2 mb-4">
+        {[["erreurs", "Erreurs", ERREUR, erreurs.filter(estErreur).length],
+          ["memos", "Mémos", MEMO, erreurs.filter((e) => !estErreur(e)).length]].map(([v, l, t, n]) => (
+          <button key={v} onClick={() => { setSection(v); setDeplie(null); setEnvoi(null); }}
+            className="flex-1 py-3 doux" style={{ borderRadius: 16, fontWeight: 700, fontSize: 14,
+              background: section === v ? t.fg : t.bg, color: section === v ? "#0E1A29" : t.fg }}>
+            {l} <span style={{ fontWeight: 500, opacity: 0.8 }}>({n})</span>
+          </button>
+        ))}
+      </div>
+
+      {/* saisie */}
       <textarea value={texte} onChange={(e) => setTexte(e.target.value)} rows={3}
-        placeholder="Ce que j'ai raté, et pourquoi." className="w-full p-3 rounded text-sm mb-2"
-        style={{ border: `1px solid ${T.line}`, background: T.card }} />
-      {(() => {
-        const choisi = items.find((i) => i.id === lien);
-        const trouves = rech.trim()
-          ? [...items].filter((i) => correspond(i, rech)).sort((a, b) => a.numero - b.numero).slice(0, 6)
-          : [];
-        return (
-          <div className="mb-6">
-            {choisi ? (
-              <div className="flex items-center gap-2 mb-2">
-                <span className="flex-1 min-w-0 text-xs px-3 py-2"
-                  style={{ background: T.accentPale, borderRadius: 12, color: T.accent }}>
-                  Item {choisi.numero} — {choisi.titre}
-                </span>
-                <button onClick={() => { setLien(""); setRech(""); }} className="text-sm px-2" style={{ color: T.ink2 }}>✕</button>
-              </div>
-            ) : (
-              <>
-                <input value={rech} onChange={(e) => setRech(e.target.value)}
-                  placeholder="Rattacher à un item — tape un numéro ou un mot"
-                  className="w-full px-3 py-2.5 text-sm mb-1"
-                  style={{ borderRadius: 12, border: `1px solid ${T.line}`, background: T.card }} />
-                {trouves.map((i) => (
-                  <button key={i.id} onClick={() => { setLien(i.id); setRech(""); }}
-                    className="w-full text-left flex items-center gap-2 doux mb-1"
-                    style={{ background: T.paper, borderRadius: 10, padding: "8px 10px" }}>
-                    <span className="shrink-0 text-xs" style={{ width: 34, color: T.ink2, fontWeight: 700 }}>{i.numero}</span>
-                    <span className="flex-1 min-w-0 text-xs truncate">{i.titre}</span>
-                  </button>
-                ))}
-                {rech.trim() && !trouves.length && (
-                  <p className="text-xs mb-1" style={{ color: T.ink2 }}>Aucun item ne correspond.</p>
-                )}
-              </>
-            )}
-            <button disabled={!texte.trim()}
-              onClick={() => { onAjouter(texte.trim(), lien || null); setTexte(""); setLien(""); setRech(""); }}
-              className="px-5 py-2.5 text-sm doux"
-              style={{ background: texte.trim() ? T.accent : "#24384F", color: "#fff", borderRadius: 999, fontWeight: 600 }}>
-              Noter
-            </button>
-          </div>
-        );
-      })()}
+        placeholder={section === "erreurs"
+          ? "Ce que tu as raté, et pourquoi…"
+          : "Un rappel, une astuce, quelque chose à ne pas oublier…"}
+        className="w-full p-3 text-sm mb-2"
+        style={{ borderRadius: 14, border: `1px solid ${T.line}`, background: T.card, lineHeight: 1.6 }} />
 
-      {(() => {
-        const qcmsRates = erreurs.filter((e) => e.qcm);
-        const notes = erreurs.filter((e) => !e.qcm);
-        const vus = filtre === "qcm" ? qcmsRates : filtre === "notes" ? notes : erreurs;
+      {choisi ? (
+        <div className="flex items-center gap-2 mb-2">
+          <span className="flex-1 min-w-0 text-xs px-3 py-2" style={{
+            background: pal((colleges.find((c) => c.id === choisi.collegeId) || {}).nom || "").bg,
+            borderRadius: 12, color: pal((colleges.find((c) => c.id === choisi.collegeId) || {}).nom || "").fg }}>
+            Item {choisi.numero} — {choisi.titre}
+          </span>
+          <button onClick={() => { setLien(""); setRech(""); }} className="text-sm px-2" style={{ color: T.ink2 }}>✕</button>
+        </div>
+      ) : (
+        <>
+          <input value={rech} onChange={(e) => setRech(e.target.value)}
+            placeholder="Rattacher à un item — numéro ou mot-clé"
+            className="w-full px-3 py-2.5 text-sm mb-1"
+            style={{ borderRadius: 12, border: `1px solid ${T.line}`, background: T.card }} />
+          {trouves.map((i) => {
+            const c = colleges.find((x) => x.id === i.collegeId);
+            const p = pal(c ? c.nom : "");
+            return (
+              <button key={i.id} onClick={() => { setLien(i.id); setRech(""); }}
+                className="w-full text-left flex items-center gap-2 doux mb-1"
+                style={{ background: T.paper, borderRadius: 10, padding: "8px 10px" }}>
+                <span className="shrink-0" style={{ width: 4, height: 20, borderRadius: 999, background: p.fg }} />
+                <span className="shrink-0 text-xs" style={{ width: 32, color: T.ink2, fontWeight: 700 }}>{i.numero}</span>
+                <span className="flex-1 min-w-0 text-xs truncate">{i.titre}</span>
+              </button>
+            );
+          })}
+          {rech.trim() && !trouves.length && (
+            <p className="text-xs mb-1" style={{ color: T.ink2 }}>Aucun item ne correspond.</p>
+          )}
+        </>
+      )}
 
-        if (!erreurs.length) return (
-          <p className="text-sm" style={{ color: T.ink2, lineHeight: 1.7 }}>
-            Rien encore. Écris une note ci-dessus, ou mets un QCM de côté depuis
-            le bilan de fin de séance en appuyant sur le drapeau.
-          </p>
-        );
+      <button disabled={!texte.trim()}
+        onClick={() => { onAjouter(texte.trim(), lien || null, section === "memos" ? "memo" : "erreur"); setTexte(""); setLien(""); setRech(""); }}
+        className="px-5 py-2.5 text-sm doux mb-6"
+        style={{ background: texte.trim() ? teinte.fg : "#24384F", color: texte.trim() ? "#0E1A29" : T.ink2,
+          borderRadius: 999, fontWeight: 700 }}>
+        {section === "erreurs" ? "Noter cette erreur" : "Ajouter ce mémo"}
+      </button>
 
-        return (
-          <>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {[["tout", `Tout (${erreurs.length})`], ["qcm", `QCM ratés (${qcmsRates.length})`],
-                ["notes", `Mes notes (${notes.length})`]].map(([v, l]) => (
-                <button key={v} onClick={() => setFiltre(v)} className="px-4 py-2 text-xs doux"
-                  style={{ borderRadius: 999, fontWeight: 600,
-                    background: filtre === v ? T.accent : T.accentPale, color: filtre === v ? "#fff" : T.accent }}>{l}</button>
-              ))}
+      {visibles.length === 0 ? (
+        <p className="text-sm" style={{ color: T.ink2, lineHeight: 1.7 }}>
+          {section === "erreurs"
+            ? "Rien encore. Écris ci-dessus, ou mets un QCM de côté depuis le bilan d'une séance avec le drapeau."
+            : "Aucun mémo. Utilise cette section pour ce que tu veux garder sous la main."}
+        </p>
+      ) : (
+        <>
+          {/* envoi vers Notes */}
+          <div className="ombre mb-4" style={{ background: T.card, borderRadius: 18, padding: "13px 15px" }}>
+            <p className="text-xs mb-2" style={{ color: T.ink2, lineHeight: 1.6 }}>
+              Envoie cette section vers Notes, Rappels ou Messages : de quoi relire dans le bus.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={async () => {
+                const t = erreursEnTexte(visibles, items, section === "erreurs" ? "MES ERREURS" : "MES MÉMOS");
+                try {
+                  if (navigator.share) { await navigator.share({ title: "EDN Go", text: t }); setEnvoi("partage"); }
+                  else { await navigator.clipboard.writeText(t); setEnvoi("copie"); }
+                } catch (e) {
+                  try { await navigator.clipboard.writeText(t); setEnvoi("copie"); } catch (x) { setEnvoi("echec"); }
+                }
+              }} className="px-4 py-2.5 text-xs doux"
+                style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 700 }}>
+                Envoyer vers Notes
+              </button>
+              <button onClick={async () => {
+                const t = erreursEnTexte(visibles, items, section === "erreurs" ? "MES ERREURS" : "MES MÉMOS");
+                try { await navigator.clipboard.writeText(t); setEnvoi("copie"); } catch (e) { setEnvoi("echec"); }
+              }} className="px-4 py-2.5 text-xs doux"
+                style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2, fontWeight: 600 }}>
+                Copier
+              </button>
             </div>
+            {envoi && (
+              <p className="text-xs mt-2 vue" style={{ color: envoi === "echec" ? T.bas : T.haut, fontWeight: 600 }}>
+                {envoi === "partage" ? "Envoyé. Choisis Notes dans la liste."
+                  : envoi === "copie" ? "Texte copié. Ouvre Notes et colle."
+                  : "Impossible d'envoyer depuis ce navigateur."}
+              </p>
+            )}
+          </div>
 
-            {vus.map((e) => {
-              const it = items.find((i) => i.id === e.itemId);
-              const ouvert = deplie === e.id;
-              return (
-                <div key={e.id} className="mb-2" style={{ background: T.card, borderRadius: 16, overflow: "hidden",
-                  borderLeft: `4px solid ${e.qcm ? (e.qcm.disc > 2 ? T.bas : T.moyen) : T.line}` }}>
-                  <div className="flex items-start gap-3" style={{ padding: "13px 15px" }}>
-                    <span className="flex-1 min-w-0">
-                      {edite === e.id && !e.qcm ? (
-                        <>
-                          <textarea autoFocus value={brouillon} onChange={(ev) => setBrouillon(ev.target.value)}
-                            rows={3} className="w-full p-2.5 text-sm mb-2"
-                            style={{ borderRadius: 10, border: `1px solid ${T.accent}`, background: T.paper, lineHeight: 1.6 }} />
-                          <span className="flex gap-2">
-                            <button onClick={() => { if (brouillon.trim() && onModifier) onModifier(e.id, brouillon.trim()); setEdite(null); }}
-                              className="px-4 py-1.5 text-xs doux"
-                              style={{ background: T.accent, color: "#fff", borderRadius: 999, fontWeight: 700 }}>Enregistrer</button>
-                            <button onClick={() => setEdite(null)} className="px-3 py-1.5 text-xs" style={{ color: T.ink2 }}>Annuler</button>
+          {/* regroupement */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            <span className="text-xs py-2" style={{ color: T.ink2 }}>Classer par</span>
+            {[["college", "Collège"], ["item", "Item"], ["date", "Date"]].map(([v, l]) => (
+              <button key={v} onClick={() => setGroupe(v)} className="px-4 py-2 text-xs doux"
+                style={{ borderRadius: 999, fontWeight: 600,
+                  background: groupe === v ? T.accent : "transparent", color: groupe === v ? "#fff" : T.ink2,
+                  border: `1px solid ${groupe === v ? T.accent : T.line}` }}>{l}</button>
+            ))}
+          </div>
+
+          {cles.map((cle) => {
+            const p = groupe === "college" && cle !== "Sans rattachement" ? pal(cle) : { fg: T.ink2, bg: T.card };
+            return (
+              <div key={cle} className="mb-5">
+                <div className="flex items-baseline gap-2 mb-2">
+                  <span style={{ width: 5, height: 15, borderRadius: 999, background: p.fg, display: "inline-block" }} />
+                  <span className="text-sm" style={{ color: p.fg, fontWeight: 700 }}>{cle}</span>
+                  <span className="text-xs" style={{ color: T.ink2 }}>{paquets[cle].length}</span>
+                </div>
+
+                {paquets[cle].map((e) => {
+                  const it = itemDe(e);
+                  const col = colDe(e);
+                  const pc = col ? pal(col.nom) : { fg: T.line, bg: T.card };
+                  const ouvert = deplie === e.id;
+                  return (
+                    <div key={e.id} className="mb-2" style={{ background: T.card, borderRadius: 16,
+                      overflow: "hidden", borderLeft: `4px solid ${pc.fg}` }}>
+                      <div className="flex items-start gap-3" style={{ padding: "13px 15px" }}>
+                        <span className="flex-1 min-w-0">
+                          {edite === e.id && !e.qcm ? (
+                            <>
+                              <textarea autoFocus value={brouillon} onChange={(ev) => setBrouillon(ev.target.value)}
+                                rows={3} className="w-full p-2.5 text-sm mb-2"
+                                style={{ borderRadius: 10, border: `1px solid ${T.accent}`, background: T.paper, lineHeight: 1.6 }} />
+                              <span className="flex gap-2">
+                                <button onClick={() => { if (brouillon.trim() && onModifier) onModifier(e.id, brouillon.trim()); setEdite(null); }}
+                                  className="px-4 py-1.5 text-xs doux"
+                                  style={{ background: T.accent, color: "#fff", borderRadius: 999, fontWeight: 700 }}>Enregistrer</button>
+                                <button onClick={() => setEdite(null)} className="px-3 py-1.5 text-xs" style={{ color: T.ink2 }}>Annuler</button>
+                              </span>
+                            </>
+                          ) : (
+                            <button onClick={() => { if (!e.qcm) { setEdite(e.id); setBrouillon(e.texte); } }}
+                              className="w-full text-left" style={{ cursor: e.qcm ? "default" : "text" }}>
+                              <span className="block text-sm" style={{ lineHeight: 1.5 }}>{e.texte}</span>
+                            </button>
+                          )}
+                          <span className="block text-xs mt-1" style={{ color: T.ink2 }}>
+                            {dCourte(e.date) || e.date}
+                            {e.qcm && ` · ${e.qcm.disc} discordance(s) · ${e.qcm.pts} pt`}
+                            {it && groupe !== "item" && <> · <button onClick={() => onOuvrir(it.id)} style={{ color: pc.fg }}>item {it.numero}</button></>}
+                            {!e.qcm && edite !== e.id && <> · <button onClick={() => { setEdite(e.id); setBrouillon(e.texte); }} style={{ color: T.accent }}>modifier</button></>}
                           </span>
-                        </>
-                      ) : (
-                        <button onClick={() => { if (!e.qcm) { setEdite(e.id); setBrouillon(e.texte); } }}
-                          className="w-full text-left" style={{ cursor: e.qcm ? "default" : "text" }}>
-                          <span className="block text-sm" style={{ lineHeight: 1.5 }}>{e.texte}</span>
-                        </button>
-                      )}
-                      <span className="block text-xs mt-1" style={{ color: T.ink2 }}>
-                        {dCourte(e.date) || e.date}
-                        {e.qcm && ` · ${e.qcm.disc} discordance(s) · ${e.qcm.pts} pt`}
-                        {it && <> · <button onClick={() => onOuvrir(it.id)} style={{ color: T.accent }}>item {it.numero}</button></>}
-                        {!e.qcm && edite !== e.id && <> · <button onClick={() => { setEdite(e.id); setBrouillon(e.texte); }} style={{ color: T.accent }}>modifier</button></>}
-                      </span>
-                    </span>
-                    {e.qcm && (
-                      <button onClick={() => setDeplie(ouvert ? null : e.id)} className="shrink-0 text-xs px-3 py-1.5 doux"
-                        style={{ borderRadius: 999, background: T.accentPale, color: T.accent, fontWeight: 600 }}>
-                        {ouvert ? "Masquer" : "Revoir"}
-                      </button>
-                    )}
-                    <button onClick={() => onSupprimer(e.id)} className="text-sm px-1 shrink-0" style={{ color: T.bas }}>×</button>
-                  </div>
+                        </span>
+                        {e.qcm && (
+                          <button onClick={() => setDeplie(ouvert ? null : e.id)} className="shrink-0 text-xs px-3 py-1.5 doux"
+                            style={{ borderRadius: 999, background: T.accentPale, color: T.accent, fontWeight: 600 }}>
+                            {ouvert ? "Masquer" : "Revoir"}
+                          </button>
+                        )}
+                        <button onClick={() => onSupprimer(e.id)} className="text-sm px-1 shrink-0" style={{ color: T.bas }}>×</button>
+                      </div>
 
-                  {ouvert && e.qcm && (
-                    <div className="vue" style={{ background: T.paper, padding: "12px 15px" }}>
-                      {(e.qcm.props || []).map((p, i) => (
-                        <Proposition key={i} p={p} i={i} choisi={p.coche} corrige onClic={() => {}} />
-                      ))}
-                      {e.qcm.explication && (
-                        <Correction juste={e.qcm.disc === 0} texte={e.qcm.explication} props={e.qcm.props}
-                          choix={(e.qcm.props || []).map((p, i) => (p.coche ? i : -1)).filter((i) => i >= 0)} />
+                      {ouvert && e.qcm && (
+                        <div className="vue" style={{ background: T.paper, padding: "12px 15px" }}>
+                          {(e.qcm.props || []).map((p2, i) => (
+                            <Proposition key={i} p={p2} i={i} choisi={p2.coche} corrige onClic={() => {}} />
+                          ))}
+                          {e.qcm.explication && (
+                            <Correction juste={e.qcm.disc === 0} texte={e.qcm.explication} props={e.qcm.props}
+                              choix={(e.qcm.props || []).map((p2, i) => (p2.coche ? i : -1)).filter((i) => i >= 0)} />
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </>
-        );
-      })()}
+                  );
+                })}
+              </div>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }
-
-/* ================== session mixte ================== */
 function Session({ paquet, onNoter, onFin, items }) {
   const [depart] = useState(Date.now());
   const [n, setN] = useState(0); const [face, setFace] = useState(false);
