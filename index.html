@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v63";
+const VERSION = "v64";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -4731,6 +4731,7 @@ function App() {
         ) : vue === "erreurs" ? (
           <Erreurs erreurs={erreurs} items={items} colleges={colleges}
             onModifier={(id, texte) => setErreurs((l) => l.map((e) => e.id === id ? { ...e, texte } : e))}
+            onBasculer={(id, genre) => setErreurs((l) => l.map((e) => e.id === id ? { ...e, genre } : e))}
             onAjouter={(texte, itemId, genre) => setErreurs((l) => [{ id: uid(), texte, itemId, genre: genre || "erreur", date: auj() }, ...l])}
             onSupprimer={(id) => setErreurs((l) => l.filter((x) => x.id !== id))}
             onOuvrir={(id) => { const it = items.find((x) => x.id === id); setCollegeId(it.collegeId); setItemId(id); }} />
@@ -7000,7 +7001,7 @@ function erreursEnTexte(liste, items, titre) {
   return t;
 }
 
-function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onSupprimer, onOuvrir }) {
+function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, onSupprimer, onOuvrir }) {
   const [section, setSection] = useState("erreurs");
   const [texte, setTexte] = useState("");
   const [lien, setLien] = useState("");
@@ -7221,6 +7222,16 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onSupprimer,
                           <button onClick={() => setDeplie(ouvert ? null : e.id)} className="shrink-0 text-xs px-3 py-1.5 doux"
                             style={{ borderRadius: 999, background: T.accentPale, color: T.accent, fontWeight: 600 }}>
                             {ouvert ? "Masquer" : "Revoir"}
+                          </button>
+                        )}
+                        {!e.qcm && onBasculer && (
+                          <button onClick={() => onBasculer(e.id, section === "erreurs" ? "memo" : "erreur")}
+                            title={section === "erreurs" ? "Envoyer vers Mémos" : "Envoyer vers Erreurs"}
+                            className="shrink-0 text-xs px-3 py-1.5 doux"
+                            style={{ borderRadius: 999, fontWeight: 600,
+                              background: section === "erreurs" ? MEMO.bg : ERREUR.bg,
+                              color: section === "erreurs" ? MEMO.fg : ERREUR.fg }}>
+                            → {section === "erreurs" ? "Mémo" : "Erreur"}
                           </button>
                         )}
                         <button onClick={() => onSupprimer(e.id)} className="text-sm px-1 shrink-0" style={{ color: T.bas }}>×</button>
