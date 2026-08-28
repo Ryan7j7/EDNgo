@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v64";
+const VERSION = "v65";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -4327,9 +4327,16 @@ function App() {
       date: auj(), t: Date.now(), ms }]);
   };
 
-  const definirComp = (id, v, date) =>
-    setItems((l) => l.map((i) => i.id === id
-      ? { ...i, comp: v, dateComp: v === 0 ? null : (date !== undefined ? date : auj()) } : i));
+  /* Marquer sa compréhension compte un passage sur l'item. Le quatrième
+     paramètre sert au retour en arrière : il restaure la liste d'origine. */
+  const definirComp = (id, v, date, tours) =>
+    setItems((l) => l.map((i) => {
+      if (i.id !== id) return i;
+      const base = { ...i, comp: v, dateComp: v === 0 ? null : (date !== undefined ? date : auj()) };
+      if (tours !== undefined) return { ...base, tours };
+      if (date === undefined && v > 0) return { ...base, tours: [...(i.tours || []), auj()] };
+      return base;
+    }));
 
   const definirNiveau = (id, v) =>
     v === -1
@@ -4536,9 +4543,23 @@ function App() {
         ::-webkit-scrollbar-thumb { background: #2E4863; border-radius: 99px; border: 2px solid ${T.paper}; }
         ::-webkit-scrollbar-thumb:hover { background: #3E5C7C; }
         * { scrollbar-width: thin; scrollbar-color: #2E4863 transparent; }
-        .doux { transition: background 180ms ease, color 180ms ease, width 340ms ease, box-shadow 180ms ease; }
+        .doux { transition: background 180ms ease, color 180ms ease, width 340ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.22,1,0.36,1); }
         @keyframes entree { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
         .vue { animation: entree 240ms cubic-bezier(0.22, 1, 0.36, 1); }
+        /* changement d'onglet : le contenu monte doucement, sans clignotement */
+        @keyframes onglet { from { opacity: 0; transform: translateY(14px) scale(0.995); } to { opacity: 1; transform: none; } }
+        .onglet { animation: onglet 300ms cubic-bezier(0.22, 1, 0.36, 1); }
+        /* les cartes se soulèvent légèrement au toucher */
+        .doux:active { transform: scale(0.975); }
+        .case { transition: transform 180ms cubic-bezier(0.22,1,0.36,1), background 180ms ease, border-color 180ms ease; }
+        .case:active { transform: scale(0.93); }
+        /* les listes apparaissent en cascade très courte */
+        @keyframes cascade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        .ombre { transition: box-shadow 200ms ease, transform 200ms cubic-bezier(0.22,1,0.36,1); }
+        @media (prefers-reduced-motion: reduce) {
+          .onglet, .vue { animation: none; }
+          .doux:active, .case:active { transform: none; }
+        }
         @keyframes voletSort { from { transform: rotateX(0deg); } to { transform: rotateX(-90deg); } }
         @keyframes voletEntre { from { transform: rotateX(90deg); } to { transform: rotateX(0deg); } }
         button, .doux { -webkit-tap-highlight-color: transparent; }
@@ -4654,7 +4675,7 @@ function App() {
         </nav>
       )}
 
-      <main key={`${vue}-${collegeId || ""}-${itemId || ""}-${session ? "s" : ""}`} className={"vue py-5 flex-1 min-w-0 mx-auto " + (vue === "grille" && !college && !item && !session ? "px-2 w-full" : "px-4 max-w-3xl")}>
+      <main key={`${vue}-${collegeId || ""}-${itemId || ""}-${session ? "s" : ""}`} className={"onglet py-5 flex-1 min-w-0 mx-auto " + (vue === "grille" && !college && !item && !session ? "px-2 w-full" : "px-4 max-w-3xl")}>
         {dossierActif ? (
           <SessionDossier dossier={dossierActif} onNoter={(v) => noter(null, v, "dossier")}
             onFin={() => setDossierActif(null)} />
@@ -5515,13 +5536,13 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [],
   const pctTotal = avancement(items);
 
   const poser = (i, v) => {
-    setHisto((h) => [...h.slice(-19), { id: i.id, comp: i.comp || 0, date: i.dateComp || null }]);
+    setHisto((h) => [...h.slice(-19), { id: i.id, comp: i.comp || 0, date: i.dateComp || null, tours: i.tours || [] }]);
     onComp(i.id, v);
   };
   const annuler = () => {
     const d = histo[histo.length - 1];
     if (!d) return;
-    onComp(d.id, d.comp, d.date);
+    onComp(d.id, d.comp, d.date, d.tours);
     setHisto((h) => h.slice(0, -1));
   };
 
@@ -5637,15 +5658,34 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [],
                       title={`${i.numero}. ${i.titre}`}
                       className="case flex flex-col items-center justify-center"
                       style={{
-                        width: 52, height: 46, borderRadius: 12, background: N.bg,
+                        width: 62, height: 58, borderRadius: 14, background: N.bg,
                         border: `1.5px solid ${sel === i.id ? "#fff" : r >= 0 ? T.moyen : N.bord}`,
                         position: "relative", overflow: "hidden",
+                        transform: sel === i.id ? "scale(1.06)" : "none",
+                        transition: "transform 180ms cubic-bezier(0.22,1,0.36,1)",
                       }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: "#FFFFFF", lineHeight: 1.1 }}>{i.numero}</span>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: "#FFFFFF", lineHeight: 1.05 }}>{i.numero}</span>
                       {i.dateComp && (
-                        <span style={{ fontSize: 8.5, color: "#FFFFFF", opacity: 0.72, lineHeight: 1.2 }}>{dCourte(i.dateComp)}</span>
+                        <span style={{ fontSize: 8.5, color: "#FFFFFF", opacity: 0.72, lineHeight: 1.25 }}>{dCourte(i.dateComp)}</span>
                       )}
-                      {pl && <span style={{ position: "absolute", top: 3, right: 3, width: 5, height: 5, borderRadius: 999, background: T.accent }} />}
+                      {(() => {
+                        /* Nombre de passages : des points jusqu'à cinq, un compte au-delà. */
+                        const t = (i.tours || []).length;
+                        if (!t) return null;
+                        if (t <= 5) return (
+                          <span className="flex gap-0.5" style={{ marginTop: 2 }}>
+                            {[...Array(t)].map((_, z) => (
+                              <span key={z} style={{ width: 3.5, height: 3.5, borderRadius: 999,
+                                background: "#FFFFFF", opacity: 0.88 }} />
+                            ))}
+                          </span>
+                        );
+                        return (
+                          <span style={{ fontSize: 8.5, fontWeight: 800, color: "#FFFFFF",
+                            opacity: 0.88, marginTop: 1, letterSpacing: "0.02em" }}>×{t}</span>
+                        );
+                      })()}
+                      {pl && <span style={{ position: "absolute", top: 4, right: 4, width: 5, height: 5, borderRadius: 999, background: T.accent }} />}
                     </button>
                   );
                 })}
