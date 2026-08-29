@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v70";
+const VERSION = "v71";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1924,28 +1924,30 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
             return (
               <div key={i.id} className="mb-2"
                 style={{
-                  background: fait ? "transparent" : place ? "rgba(255,255,255,0.03)" : N.bg,
-                  borderLeft: `4px solid ${fait ? T.line : place ? N.bord : N.bord}`,
+                  /* La couleur du niveau de compréhension est toujours celle du
+                     bloc : seule son intensité change selon l'avancement. */
+                  background: N.bg,
+                  borderLeft: `4px solid ${N.bord}`,
                   borderRadius: 14, padding: "10px 12px",
-                  opacity: fait ? 0.42 : place ? 0.72 : 1,
-                  border: place ? `1px solid ${T.line}` : undefined,
+                  opacity: fait ? 0.4 : place ? 0.68 : 1,
                 }}>
                 <button onClick={() => onOuvrirItem(i.id)} className="w-full text-left">
-                  <span className="block text-xs" style={{ color: fait ? T.ink2 : N.fg, fontWeight: 800, marginBottom: 2 }}>
+                  <span className="block text-xs" style={{ color: N.fg, fontWeight: 800, marginBottom: 2 }}>
                     {i.numero} · {N.nom}
                   </span>
                   <span className="block" style={{ fontSize: 13, lineHeight: 1.35, fontWeight: 600,
-                    color: fait ? T.ink2 : N.fg,
-                    textDecoration: fait ? "line-through" : "none" }}>
+                    color: N.fg,
+                    textDecoration: fait ? "line-through" : "none",
+                    textDecorationThickness: fait ? 2 : undefined }}>
                     {i.titre}
                   </span>
-                  {c && <span className="block text-xs mt-1" style={{ color: fait ? T.ink2 : N.fg, opacity: 0.7 }}>{c.nom}</span>}
+                  {c && <span className="block text-xs mt-1" style={{ color: N.fg, opacity: 0.7 }}>{c.nom}</span>}
                 </button>
 
                 <div className="flex items-center gap-2 mt-2">
                   {fait ? (
                     <span className="text-xs px-2 py-0.5" style={{ borderRadius: 999, fontWeight: 700,
-                      background: "rgba(255,255,255,0.06)", color: T.haut }}>
+                      background: "rgba(255,255,255,0.16)", color: N.fg }}>
                       ✓ révisé{date ? " le " + dCourte(date) : ""}
                     </span>
                   ) : place ? (
