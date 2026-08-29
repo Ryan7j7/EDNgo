@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v68";
+const VERSION = "v70";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1860,53 +1860,109 @@ function revisionsDuJour(items, jour) {
 
 function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem }) {
   const due = revisionsDuJour(items, jour);
-  const posees = new Set(taches.filter((t) => t.date === jour && t.itemId).map((t) => t.itemId));
+
+  /* Pour chaque item dû, on regarde s'il est déjà planifié quelque part, et
+     si la tâche correspondante a été cochée. Trois états, trois traitements :
+     à placer, planifié pour tel jour, ou fait. */
+  const etatDe = (id) => {
+    const liees = taches.filter((t) => t.itemId === id && t.date >= jour)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (!liees.length) {
+      const passees = taches.filter((t) => t.itemId === id && t.fait);
+      if (passees.length) return { etat: "fait", date: passees[passees.length - 1].date };
+      return { etat: "libre" };
+    }
+    const faite = liees.find((t) => t.fait);
+    if (faite) return { etat: "fait", date: faite.date };
+    return { etat: "place", date: liees[0].date, heure: liees[0].debut };
+  };
+
+  /* Une révision faite reste visible trois jours, le temps de constater le
+     travail accompli, puis disparaît d'elle-même pour ne pas encombrer. */
+  const jours = (a, b) =>
+    Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
+
+  const enrichi = due.map(({ i, retard }) => ({ i, retard, ...etatDe(i.id) }))
+    .filter((x) => !(x.etat === "fait" && x.date && jours(x.date, jour) > 3));
+
+  const rang = { libre: 0, place: 1, fait: 2 };
+  enrichi.sort((a, b) => {
+    if (rang[a.etat] !== rang[b.etat]) return rang[a.etat] - rang[b.etat];
+    if (a.etat === "place") return (a.date || "").localeCompare(b.date || "");
+    if (a.etat === "fait") return (b.date || "").localeCompare(a.date || "");
+    return b.retard - a.retard;
+  });
+
+  const aPlacer = enrichi.filter((x) => x.etat === "libre").length;
+  const faits = enrichi.filter((x) => x.etat === "fait").length;
 
   return (
     <div className="ombre" style={{ background: T.card, borderRadius: 22, padding: "14px 15px" }}>
       <div className="flex items-baseline justify-between mb-1">
         <span style={{ fontFamily: serif, fontSize: 16 }}>À réviser</span>
-        <span className="text-xs" style={{ color: T.ink2 }}>{due.length}</span>
+        <span className="text-xs" style={{ color: aPlacer ? T.moyen : T.ink2, fontWeight: 700 }}>
+          {aPlacer} à placer
+        </span>
       </div>
       <p className="text-xs mb-3" style={{ color: T.ink2, lineHeight: 1.5 }}>
         D'après ce que tu as coché dans la grille.
+        {faits > 0 && " Les révisions faites disparaissent au bout de trois jours."}
       </p>
 
-      {due.length === 0 ? (
+      {enrichi.length === 0 ? (
         <p className="text-xs py-3" style={{ color: T.ink2, lineHeight: 1.6 }}>
           Rien d'échu aujourd'hui. Colore des items dans la grille : leur date de révision
           se calcule toute seule.
         </p>
       ) : (
         <div style={{ maxHeight: "56vh", overflowY: "auto" }}>
-          {due.map(({ i, retard: r }) => {
+          {enrichi.map(({ i, retard: r, etat, date, heure }) => {
             const N = NIVEAUX_C[Math.min(i.comp || 0, 4)];
             const c = colleges.find((x) => x.id === i.collegeId);
-            const dejaPosee = posees.has(i.id);
+            const fait = etat === "fait";
+            const place = etat === "place";
             return (
-              <div key={i.id} className="mb-2 doux"
-                style={{ background: N.bg, borderLeft: `4px solid ${N.bord}`, borderRadius: 14,
-                  padding: "10px 12px", opacity: dejaPosee ? 0.5 : 1 }}>
+              <div key={i.id} className="mb-2"
+                style={{
+                  background: fait ? "transparent" : place ? "rgba(255,255,255,0.03)" : N.bg,
+                  borderLeft: `4px solid ${fait ? T.line : place ? N.bord : N.bord}`,
+                  borderRadius: 14, padding: "10px 12px",
+                  opacity: fait ? 0.42 : place ? 0.72 : 1,
+                  border: place ? `1px solid ${T.line}` : undefined,
+                }}>
                 <button onClick={() => onOuvrirItem(i.id)} className="w-full text-left">
-                  <span className="block text-xs" style={{ color: N.fg, fontWeight: 800, marginBottom: 2 }}>
+                  <span className="block text-xs" style={{ color: fait ? T.ink2 : N.fg, fontWeight: 800, marginBottom: 2 }}>
                     {i.numero} · {N.nom}
                   </span>
-                  <span className="block" style={{ fontSize: 13, color: N.fg, lineHeight: 1.35, fontWeight: 600 }}>
+                  <span className="block" style={{ fontSize: 13, lineHeight: 1.35, fontWeight: 600,
+                    color: fait ? T.ink2 : N.fg,
+                    textDecoration: fait ? "line-through" : "none" }}>
                     {i.titre}
                   </span>
-                  {c && <span className="block text-xs mt-1" style={{ color: N.fg, opacity: 0.7 }}>{c.nom}</span>}
+                  {c && <span className="block text-xs mt-1" style={{ color: fait ? T.ink2 : N.fg, opacity: 0.7 }}>{c.nom}</span>}
                 </button>
 
                 <div className="flex items-center gap-2 mt-2">
-                  <span className="text-xs px-2 py-0.5" style={{
-                    borderRadius: 999, fontWeight: 700,
-                    background: r > 0 ? "rgba(0,0,0,0.32)" : "rgba(255,255,255,0.14)", color: N.fg }}>
-                    {r > 0 ? `en retard de ${r} j` : "aujourd'hui"}
-                  </span>
-                  <div className="flex-1" />
-                  {dejaPosee ? (
-                    <span className="text-xs" style={{ color: N.fg, opacity: 0.75 }}>déjà placé</span>
+                  {fait ? (
+                    <span className="text-xs px-2 py-0.5" style={{ borderRadius: 999, fontWeight: 700,
+                      background: "rgba(255,255,255,0.06)", color: T.haut }}>
+                      ✓ révisé{date ? " le " + dCourte(date) : ""}
+                    </span>
+                  ) : place ? (
+                    <span className="text-xs px-2 py-0.5" style={{ borderRadius: 999, fontWeight: 700,
+                      background: "rgba(255,255,255,0.08)", color: N.fg }}>
+                      planifié {date === jour ? "aujourd'hui" : "le " + dCourte(date)}
+                      {heure !== undefined ? ` à ${heure}h` : ""}
+                    </span>
                   ) : (
+                    <span className="text-xs px-2 py-0.5" style={{
+                      borderRadius: 999, fontWeight: 700,
+                      background: r > 0 ? "rgba(0,0,0,0.32)" : "rgba(255,255,255,0.14)", color: N.fg }}>
+                      {r > 0 ? `en retard de ${r} j` : "aujourd'hui"}
+                    </span>
+                  )}
+                  <div className="flex-1" />
+                  {etat === "libre" && (
                     <button onClick={() => onPoser(i)} className="text-xs px-3 py-1 doux"
                       style={{ borderRadius: 999, background: N.bord, color: "#0E1A29", fontWeight: 700 }}>
                       Placer
