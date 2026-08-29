@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v71";
+const VERSION = "v75";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1762,6 +1762,9 @@ const BLOCS = [
 ];
 
 /* les anciennes tâches n'avaient qu'une heure texte : on les convertit */
+/* Affiche 9, 17h30 ou 20h : les modèles utilisent des demi-heures. */
+const hFmt = (h) => `${Math.floor(h)}h${h % 1 ? "30" : ""}`;
+
 const normaliser = (t) => {
   if (typeof t.debut === "number") return t;
   const h = parseInt((t.heure || "").split(":")[0], 10);
@@ -1770,7 +1773,7 @@ const normaliser = (t) => {
 
 function versICS(taches, items, colleges) {
   const pad = (n) => String(n).padStart(2, "0");
-  const stamp = (d, h) => `${d.replace(/-/g, "")}T${pad(h)}0000`;
+  const stamp = (d, h) => `${d.replace(/-/g, "")}T${pad(Math.floor(h))}${h % 1 ? "30" : "00"}00`;
   const echap = (t) => String(t).replace(/[\\;,]/g, (m) => "\\" + m).replace(/\n/g, "\\n");
   const lignes = [
     "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//EDN Go//FR", "CALSCALE:GREGORIAN",
@@ -1784,7 +1787,7 @@ function versICS(taches, items, colleges) {
       `UID:edngo-${t.id}@edngo`,
       `DTSTAMP:${stamp(auj(), 8)}Z`,
       `DTSTART;TZID=Europe/Paris:${stamp(t.date, t.debut)}`,
-      `DTEND;TZID=Europe/Paris:${stamp(t.date, Math.min(23, t.debut + (t.duree || 1)))}`,
+      `DTEND;TZID=Europe/Paris:${stamp(t.date, Math.min(23.5, t.debut + (t.duree || 1)))}`,
       `SUMMARY:${echap((t.fait ? "✓ " : "") + titre)}`,
       c ? `DESCRIPTION:${echap(c.nom + " · EDN Go")}` : "DESCRIPTION:EDN Go",
       "END:VEVENT");
@@ -1795,42 +1798,37 @@ function versICS(taches, items, colleges) {
 
 const MODELES = [
   {
-    id: "stage", nom: "Stage", ic: "▲", sous: "9h–16h, sport 17h, révisions le soir",
+    id: "stage", nom: "Stage", ic: "▲", sous: "Stage 9h–17h30, sport, deux heures le soir",
     creneaux: [
-      { debut: 9, duree: 7, texte: "Stage à l'hôpital", libre: false },
-      { debut: 17, duree: 2, texte: "Sport", libre: false },
-      { debut: 19, duree: 1, texte: null },
+      { debut: 9, duree: 8.5, texte: "Stage", libre: false },
+      { debut: 17.5, duree: 1.5, texte: "Sport", libre: false },
+      { debut: 19, duree: 1, texte: "Dîner", libre: false },
       { debut: 20, duree: 2, texte: null },
     ],
   },
   {
-    id: "weekend", nom: "Week-end", ic: "◗", sous: "Sport le matin, deux blocs longs ensuite",
+    id: "intensif", nom: "Intensive", ic: "❋", sous: "Quatre blocs de deux heures, sport le soir",
     creneaux: [
-      { debut: 8, duree: 2, texte: "Sport", libre: false },
-      { debut: 10, duree: 2, texte: null },
-      { debut: 14, duree: 3, texte: null },
-      { debut: 18, duree: 2, texte: null },
+      { debut: 8, duree: 2, texte: null },
+      { debut: 10.5, duree: 2, texte: null },
+      { debut: 12.5, duree: 2, texte: "Déjeuner", libre: false },
+      { debut: 14.5, duree: 2, texte: null },
+      { debut: 17, duree: 2, texte: null },
+      { debut: 19, duree: 1.5, texte: "Sport", libre: false },
     ],
   },
   {
-    id: "charbon", nom: "Charbon", ic: "❋", sous: "Quatre blocs, pauses comprises",
-    creneaux: [
-      { debut: 8, duree: 3, texte: null },
-      { debut: 11, duree: 1, texte: "Pause", libre: false },
-      { debut: 14, duree: 3, texte: null },
-      { debut: 17, duree: 1, texte: "Pause", libre: false },
-      { debut: 18, duree: 3, texte: null },
-      { debut: 21, duree: 2, texte: null },
-    ],
-  },
-  {
-    id: "tranquille", nom: "Tranquille", ic: "○", sous: "Deux heures le matin, le reste est à toi",
+    id: "chill", nom: "Tranquille", ic: "◗", sous: "Départ à 10h, trois blocs, sport le soir",
     creneaux: [
       { debut: 10, duree: 2, texte: null },
-      { debut: 16, duree: 1, texte: null },
+      { debut: 12, duree: 2, texte: "Déjeuner", libre: false },
+      { debut: 14, duree: 2, texte: null },
+      { debut: 16.5, duree: 2, texte: null },
+      { debut: 19, duree: 1.5, texte: "Sport", libre: false },
     ],
   },
 ];
+
 
 /* rappel LCA toutes les trois semaines */
 const CLE_LCA = "edngo-lca";
@@ -1842,6 +1840,28 @@ function lcaDu() {
   } catch (e) { return false; }
 }
 function noterLca() { try { localStorage.setItem(CLE_LCA, auj()); } catch (e) {} }
+
+const CLE_AUTO = "edngo-auto-placement";
+
+/* Ajoute un item dans le premier créneau libre d'une journée et renvoie la
+   nouvelle liste de tâches. Utilisée par le bouton et par le placement
+   automatique, pour que les deux se comportent exactement pareil. */
+function ajoutRevision(taches, i, jour) {
+  const n = Math.min(i.comp || 0, 4);
+  const duree = [1, 3, 2, 2, 1][n] || 1;
+  const duJour = taches.filter((t) => t.date === jour).map(normaliser);
+  const occupees = duJour.map((t) => [t.debut, t.debut + (t.duree || 1)]);
+  const libre = (a, b) => b <= 24 && !occupees.some(([x, y]) => a < y && b > x);
+  let h = -1;
+  for (let d = 8; d <= 22; d++) { if (libre(d, d + duree)) { h = d; break; } }
+  if (h === -1) for (let d = 8; d <= 23; d++) { if (libre(d, d + 1)) { h = d; break; } }
+  if (h === -1) return taches;
+  return [...taches, {
+    id: Math.random().toString(36).slice(2, 9), date: jour, type: "item",
+    itemId: i.id, texte: "", debut: h, duree: libre(h, h + duree) ? duree : 1,
+    fait: false, teinte: (taches.length + i.numero) % BLOCS.length, revision: true,
+  }];
+}
 
 /* Items dont la révision arrive à échéance : calculée depuis la compréhension
    que tu as choisie dans la grille, sans rien saisir à la main. */
@@ -1858,23 +1878,32 @@ function revisionsDuJour(items, jour) {
   return due.sort((a, b) => b.retard - a.retard || (a.i.comp || 0) - (b.i.comp || 0));
 }
 
-function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem }) {
+function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem, auto, onAuto }) {
   const due = revisionsDuJour(items, jour);
 
   /* Pour chaque item dû, on regarde s'il est déjà planifié quelque part, et
      si la tâche correspondante a été cochée. Trois états, trois traitements :
      à placer, planifié pour tel jour, ou fait. */
+  /* On regarde TOUTES les tâches liées à l'item, quel que soit le jour
+     consulté : un item placé lundi reste « placé » quand on regarde mercredi.
+     Seule une tâche déjà cochée le fait passer en « fait ». */
   const etatDe = (id) => {
-    const liees = taches.filter((t) => t.itemId === id && t.date >= jour)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    if (!liees.length) {
-      const passees = taches.filter((t) => t.itemId === id && t.fait);
-      if (passees.length) return { etat: "fait", date: passees[passees.length - 1].date };
-      return { etat: "libre" };
+    const liees = taches.filter((t) => t.itemId === id)
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    if (!liees.length) return { etat: "libre" };
+
+    const faites = liees.filter((t) => t.fait);
+    if (faites.length) {
+      const derniere = faites[faites.length - 1];
+      /* une nouvelle échéance postérieure à la dernière révision remet à faire */
+      const aVenir = liees.find((t) => !t.fait && t.date > derniere.date);
+      if (aVenir) return { etat: "place", date: aVenir.date, heure: aVenir.debut };
+      return { etat: "fait", date: derniere.date };
     }
-    const faite = liees.find((t) => t.fait);
-    if (faite) return { etat: "fait", date: faite.date };
-    return { etat: "place", date: liees[0].date, heure: liees[0].debut };
+
+    /* pas encore faite : on annonce la prochaine échéance, ou la dernière passée */
+    const prochaine = liees.find((t) => t.date >= jour) || liees[liees.length - 1];
+    return { etat: "place", date: prochaine.date, heure: prochaine.debut };
   };
 
   /* Une révision faite reste visible trois jours, le temps de constater le
@@ -1904,6 +1933,25 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
           {aPlacer} à placer
         </span>
       </div>
+
+      {aPlacer > 1 && (
+        <button onClick={() => enrichi.filter((x) => x.etat === "libre").forEach((x) => onPoser(x.i))}
+          className="w-full py-2.5 mb-2 doux"
+          style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 700, fontSize: 13 }}>
+          Tout placer aujourd'hui ({aPlacer})
+        </button>
+      )}
+
+      <button onClick={() => onAuto(!auto)} className="flex items-center gap-2 mb-2 w-full text-left">
+        <span className="shrink-0 doux" style={{ width: 34, height: 20, borderRadius: 999,
+          background: auto ? T.accent : "#24384F", position: "relative" }}>
+          <span className="doux" style={{ position: "absolute", top: 2, left: auto ? 16 : 2,
+            width: 16, height: 16, borderRadius: 999, background: "#fff" }} />
+        </span>
+        <span className="text-xs" style={{ color: auto ? T.accent : T.ink2, fontWeight: 600 }}>
+          Placer automatiquement
+        </span>
+      </button>
       <p className="text-xs mb-3" style={{ color: T.ink2, lineHeight: 1.5 }}>
         D'après ce que tu as coché dans la grille.
         {faits > 0 && " Les révisions faites disparaissent au bout de trois jours."}
@@ -1954,7 +2002,7 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
                     <span className="text-xs px-2 py-0.5" style={{ borderRadius: 999, fontWeight: 700,
                       background: "rgba(255,255,255,0.08)", color: N.fg }}>
                       planifié {date === jour ? "aujourd'hui" : "le " + dCourte(date)}
-                      {heure !== undefined ? ` à ${heure}h` : ""}
+                      {heure !== undefined ? " à " + hFmt(heure) : ""}
                     </span>
                   ) : (
                     <span className="text-xs px-2 py-0.5" style={{
@@ -1989,6 +2037,28 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
   const [selection, setSelection] = useState(null);
   const [noter, setNoter] = useState(null);
   const [noteOuverte, setNoteOuverte] = useState(false);
+  const [apercuModele, setApercuModele] = useState(null);
+
+  /* Placement automatique des révisions échues, si l'option est active.
+     Il ne s'applique qu'au jour même et une seule fois par journée, pour ne
+     jamais remplir une journée à l'insu de l'utilisateur. */
+  const [auto, setAuto] = useState(() => {
+    try { return localStorage.getItem(CLE_AUTO) === "1"; } catch (e) { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem(CLE_AUTO, auto ? "1" : "0"); } catch (e) {} }, [auto]);
+
+  const dejaAuto = useRef(null);
+  useEffect(() => {
+    if (!auto || jour !== auj()) return;
+    if (dejaAuto.current === jour) return;
+    const posees = new Set(taches.filter((t) => t.itemId).map((t) => t.itemId));
+    const aFaire = revisionsDuJour(items, jour).filter(({ i }) => !posees.has(i.id));
+    if (!aFaire.length) return;
+    dejaAuto.current = jour;
+    let liste = taches;
+    aFaire.slice(0, 6).forEach(({ i }) => { liste = ajoutRevision(liste, i, jour); });
+    onMaj(liste);
+  }, [auto, jour, items, taches]);
   const [export_, setExport_] = useState(false);
   const [modeles, setModeles] = useState(false);
   const [purge, setPurge] = useState(false);
@@ -2054,47 +2124,54 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
 
   /* Place un item à réviser dans le premier créneau libre. La durée dépend de
      la compréhension : moins c'est compris, plus le bloc est long. */
-  const placerRevision = (i) => {
-    const n = Math.min(i.comp || 0, 4);
-    const duree = [1, 3, 2, 2, 1][n] || 1;
-    const occupees = duJour.map((t) => [t.debut, t.debut + (t.duree || 1)]);
-    const libre = (a, b) => b <= 24 && !occupees.some(([x, y]) => a < y && b > x);
-    let h = -1;
-    for (let d = 8; d <= 22; d++) { if (libre(d, d + duree)) { h = d; break; } }
-    if (h === -1) for (let d = 8; d <= 23; d++) { if (libre(d, d + 1)) { h = d; break; } }
-    if (h === -1) return;
-    onMaj([...taches, {
-      id: Math.random().toString(36).slice(2, 9), date: jour, type: "item",
-      itemId: i.id, texte: "", debut: h, duree: libre(h, h + duree) ? duree : 1,
-      fait: false, teinte: (taches.length + i.numero) % BLOCS.length, revision: true,
-    }]);
-  };
+  const placerRevision = (i) => onMaj(ajoutRevision(taches, i, jour));
 
   /* remplit la journée avec un modèle, en piochant les items les plus faibles */
-  const appliquerModele = (m) => {
+  /* Construit la journée que produirait un modèle, sans l'appliquer.
+     Les créneaux d'étude reçoivent d'abord les révisions échues du jour,
+     puis les items les plus fragiles. */
+  const construireModele = (m) => {
     const occupees = duJour.map((t) => [t.debut, t.debut + (t.duree || 1)]);
     const libre = (a, b) => !occupees.some(([x, y]) => a < y && b > x);
-    const candidats = items
-      .filter((i) => (i.comp || 0) < 4)
-      .map((i) => ({ i, d: i.dateComp || "0000-00-00", n: i.comp || 0 }))
+    const dejaPoses = new Set(taches.filter((t) => t.itemId).map((t) => t.itemId));
+
+    const dus = revisionsDuJour(items, jour)
+      .filter(({ i }) => !dejaPoses.has(i.id))
+      .map(({ i, retard }) => ({ i, motif: retard > 0 ? `en retard de ${retard} j` : "échu aujourd'hui" }));
+
+    const faibles = items
+      .filter((i) => (i.comp || 0) > 0 && (i.comp || 0) < 4
+        && !dejaPoses.has(i.id) && !dus.some((x) => x.i.id === i.id))
+      .map((i) => ({ i, motif: NIVEAUX_C[Math.min(i.comp, 4)].nom.toLowerCase(),
+        n: i.comp || 0, d: i.dateComp || "0000-00-00" }))
       .sort((a, b) => a.n - b.n || a.d.localeCompare(b.d));
+
+    const file = [...dus, ...faibles];
     let k = 0;
-    const nouvelles = [];
+    const prevus = [];
     m.creneaux.forEach((c, idx) => {
-      if (!libre(c.debut, c.debut + c.duree)) return;
-      let type = "perso", itemId = null, texte_ = c.texte;
+      const conflit = !libre(c.debut, c.debut + c.duree);
+      let type = "perso", itemId = null, texte_ = c.texte, motif = null;
       if (c.texte === null) {
-        const x = candidats[k++];
-        if (x) { type = "item"; itemId = x.i.id; texte_ = ""; }
+        const x = file[k++];
+        if (x) { type = "item"; itemId = x.i.id; texte_ = ""; motif = x.motif; }
         else texte_ = "Révision libre";
       }
-      nouvelles.push({
+      prevus.push({
         id: Math.random().toString(36).slice(2, 9), date: jour, type, itemId, texte: texte_,
-        debut: c.debut, duree: c.duree, fait: false,
+        debut: c.debut, duree: c.duree, fait: false, motif, conflit,
         teinte: c.libre === false ? 7 : (taches.length + idx) % BLOCS.length,
       });
     });
+    return prevus;
+  };
+
+  const appliquerModele = () => {
+    if (!apercuModele) return;
+    const nouvelles = apercuModele.prevus.filter((p) => !p.conflit)
+      .map(({ motif, conflit, ...t }) => t);
     if (nouvelles.length) onMaj([...taches, ...nouvelles]);
+    setApercuModele(null);
     setModeles(false);
   };
 
@@ -2300,15 +2377,85 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
             Il n'écrase jamais ce qui est déjà planifié.
           </p>
           <div className="grid grid-cols-2 gap-2 mb-3">
-            {MODELES.map((m) => (
-              <button key={m.id} onClick={() => appliquerModele(m)} className="text-left doux"
-                style={{ background: T.paper, borderRadius: 16, padding: "12px 13px", border: `1px solid ${T.line}` }}>
-                <span style={{ fontSize: 17, color: T.accent, display: "block", marginBottom: 3 }}>{m.ic}</span>
-                <span className="block text-sm" style={{ fontWeight: 700 }}>{m.nom}</span>
-                <span className="block text-xs mt-0.5" style={{ color: T.ink2, lineHeight: 1.4 }}>{m.sous}</span>
-              </button>
-            ))}
+            {MODELES.map((m) => {
+              const actif = apercuModele && apercuModele.id === m.id;
+              return (
+                <button key={m.id}
+                  onClick={() => setApercuModele(actif ? null : { id: m.id, nom: m.nom, prevus: construireModele(m) })}
+                  className="text-left doux"
+                  style={{ background: actif ? T.accentPale : T.paper, borderRadius: 16, padding: "12px 13px",
+                    border: `1px solid ${actif ? T.accent : T.line}` }}>
+                  <span style={{ fontSize: 17, color: T.accent, display: "block", marginBottom: 3 }}>{m.ic}</span>
+                  <span className="block text-sm" style={{ fontWeight: 700 }}>{m.nom}</span>
+                  <span className="block text-xs mt-0.5" style={{ color: T.ink2, lineHeight: 1.4 }}>{m.sous}</span>
+                </button>
+              );
+            })}
           </div>
+
+          {apercuModele && (() => {
+            const p = apercuModele.prevus;
+            const retenus = p.filter((x) => !x.conflit);
+            const ecartes = p.length - retenus.length;
+
+            return (
+              <div className="vue mb-3" style={{ background: T.paper, borderRadius: 16, padding: "13px 14px" }}>
+                <div className="flex items-baseline justify-between mb-2">
+                  <span className="text-xs uppercase" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+                    Aperçu — {apercuModele.nom}
+                  </span>
+                  <span className="text-xs" style={{ color: T.ink2 }}>{retenus.length} créneau(x)</span>
+                </div>
+
+                {p.map((t, z) => {
+                  const it = t.itemId ? items.find((x) => x.id === t.itemId) : null;
+                  const col = it ? colleges.find((x) => x.id === it.collegeId) : null;
+                  const pc = col ? pal(col.nom) : { fg: T.ink2, bg: T.card };
+                  return (
+                    <div key={z} className="flex items-start gap-2.5 py-2"
+                      style={{ borderBottom: z < p.length - 1 ? `1px solid ${T.line}` : "none",
+                        opacity: t.conflit ? 0.38 : 1 }}>
+                      <span className="shrink-0 text-xs" style={{ width: 62, color: T.ink2, fontWeight: 700, paddingTop: 1 }}>
+                        {hFmt(t.debut)}–{hFmt(t.debut + t.duree)}
+                      </span>
+                      <span className="shrink-0" style={{ width: 4, height: 26, borderRadius: 999,
+                        background: it ? pc.fg : T.line }} />
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-xs" style={{ lineHeight: 1.4,
+                          textDecoration: t.conflit ? "line-through" : "none" }}>
+                          {it ? `${it.numero}. ${it.titre}` : t.texte}
+                        </span>
+                        {t.conflit ? (
+                          <span className="block text-xs mt-0.5" style={{ color: T.bas }}>créneau déjà occupé</span>
+                        ) : t.motif ? (
+                          <span className="block text-xs mt-0.5" style={{ color: pc.fg, opacity: 0.85 }}>{t.motif}</span>
+                        ) : null}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                <div className="flex items-center gap-2 mt-3">
+                  <button onClick={appliquerModele} disabled={!retenus.length}
+                    className="flex-1 py-3 doux"
+                    style={{ borderRadius: 999, background: retenus.length ? T.accent : "#24384F",
+                      color: "#fff", fontWeight: 700, fontSize: 13 }}>
+                    Appliquer à cette journée
+                  </button>
+                  <button onClick={() => setApercuModele({ ...apercuModele, prevus: construireModele(MODELES.find((m) => m.id === apercuModele.id)) })}
+                    className="px-4 py-3 text-xs doux"
+                    style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2, fontWeight: 600 }}>
+                    Autres items
+                  </button>
+                </div>
+                {ecartes > 0 && (
+                  <p className="text-xs mt-2" style={{ color: T.ink2 }}>
+                    {ecartes} créneau(x) écarté(s) : l'horaire est déjà pris.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           {duJour.length > 0 && (
             <>
@@ -2440,7 +2587,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                         </span>
                       )}
                       <span className="block text-xs mt-0.5" style={{ color: b.fg, opacity: 0.72 }}>
-                        {t.debut}h – {t.debut + (t.duree || 1)}h{t.nCols === 1 && c ? ` · ${c.nom}` : ""}
+                        {hFmt(t.debut)} – {hFmt(t.debut + (t.duree || 1))}{t.nCols === 1 && c ? ` · ${c.nom}` : ""}
                       </span>
                     </span>
                   </span>
@@ -2625,7 +2772,8 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
         })()}
 
         <ColonneRevisions items={items} colleges={colleges} jour={jour} taches={taches}
-          onOuvrirItem={onOuvrirItem} onPoser={placerRevision} />
+          onOuvrirItem={onOuvrirItem} onPoser={placerRevision}
+          auto={auto} onAuto={setAuto} />
       </div>
       </div>
 
