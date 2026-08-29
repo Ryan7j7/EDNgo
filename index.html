@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v65";
+const VERSION = "v68";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1922,7 +1922,7 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
   );
 }
 
-function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, onNote }) {
+function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, onNote, notesJour = {}, onNoteJour }) {
   const [debutSem, setDebutSem] = useState(() => lundiDe(new Date()));
   const [jour, setJour] = useState(() => iso(new Date()));
   const [creneau, setCreneau] = useState(null);
@@ -1930,6 +1930,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
   const [texte, setTexte] = useState("");
   const [selection, setSelection] = useState(null);
   const [noter, setNoter] = useState(null);
+  const [noteOuverte, setNoteOuverte] = useState(false);
   const [export_, setExport_] = useState(false);
   const [modeles, setModeles] = useState(false);
   const [purge, setPurge] = useState(false);
@@ -2307,7 +2308,9 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
       )}
 
       <div className="lg:flex lg:gap-4 lg:items-start">
-      <div ref={zone} className="ombre lg:flex-1 lg:min-w-0" style={{ background: T.card, borderRadius: 22, overflow: "auto", maxHeight: "66vh" }}>
+      <div ref={zone} className="ombre lg:flex-1 lg:min-w-0"
+        style={{ background: T.card, borderRadius: 22, maxHeight: "66vh",
+          overflow: glisse ? "hidden" : "auto", overscrollBehavior: "contain" }}>
         <div style={{ position: "relative", height: 24 * HT + 14, paddingTop: 8 }}
           onPointerMove={bouger} onPointerUp={lacher} onPointerCancel={lacher}>
 
@@ -2335,7 +2338,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
             const actif = selection === t.id;
             const enCours = glisse && glisse.id === t.id;
             return (
-              <div key={t.id}
+              <div key={t.id} className="fixe"
                 style={{
                   position: "absolute", top: t.debut * HT + 10,
                   left: `calc(58px + (100% - 68px) * ${t.col / t.nCols})`,
@@ -2349,7 +2352,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                   transition: enCours ? "none" : "top 140ms ease, height 140ms ease, left 140ms ease, width 140ms ease",
                 }}>
                 <div onPointerDown={(e) => { setSelection(t.id); prendre(e, t, "debut"); }}
-                  style={{ padding: "7px 10px", height: "100%", cursor: "grab" }}>
+                  style={{ padding: "7px 10px", height: "100%", cursor: "grab", touchAction: "none" }}>
                   <span className="flex items-start gap-2">
                     <span onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
@@ -2387,7 +2390,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
 
                 {/* poignée d'étirement */}
                 <div onPointerDown={(e) => prendre(e, t, "duree")}
-                  style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 18,
+                  style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 18, touchAction: "none",
                     display: "flex", alignItems: "center", justifyContent: "center", cursor: "ns-resize" }}>
                   <span style={{ width: 46, height: 4, borderRadius: 999, background: b.bar, opacity: 0.85 }} />
                 </div>
@@ -2469,6 +2472,40 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
       </div>
 
       <div className="lg:w-72 lg:shrink-0 mt-4 lg:mt-0">
+        {/* Bloc-notes libre, propre à la journée affichée. */}
+        <div className="ombre mb-3" style={{ background: T.card, borderRadius: 22, padding: "14px 15px" }}>
+          <div className="flex items-center justify-between mb-1">
+            <span style={{ fontFamily: serif, fontSize: 16 }}>Notes du jour</span>
+            <button onClick={() => setNoteOuverte(!noteOuverte)}
+              aria-label={noteOuverte ? "Replier" : "Écrire une note"}
+              className="flex items-center justify-center doux shrink-0"
+              style={{ width: 30, height: 30, borderRadius: 999,
+                background: noteOuverte ? T.accent : T.accentPale,
+                color: noteOuverte ? "#fff" : T.accent, fontSize: 17, fontWeight: 700, lineHeight: 1 }}>
+              {noteOuverte ? "–" : "+"}
+            </button>
+          </div>
+
+          {noteOuverte ? (
+            <textarea autoFocus value={notesJour[jour] || ""}
+              onChange={(e) => onNoteJour(jour, e.target.value)}
+              rows={5} placeholder="Ce qu'il faut penser à faire, une remarque sur la journée…"
+              className="w-full p-3 text-sm mt-1"
+              style={{ borderRadius: 14, border: `1px solid ${T.line}`, background: T.paper, lineHeight: 1.6 }} />
+          ) : notesJour[jour] ? (
+            <button onClick={() => setNoteOuverte(true)} className="w-full text-left doux"
+              style={{ background: T.paper, borderRadius: 14, padding: "11px 13px", marginTop: 4 }}>
+              <span className="block text-sm" style={{ lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                {notesJour[jour]}
+              </span>
+            </button>
+          ) : (
+            <p className="text-xs" style={{ color: T.ink2, lineHeight: 1.6 }}>
+              Appuie sur + pour noter ce qui n'entre pas dans un créneau.
+            </p>
+          )}
+        </div>
+
         {(() => {
           const tache = taches.find((t) => t.id === noter);
           const item = tache && items.find((x) => x.id === tache.itemId);
@@ -2687,7 +2724,18 @@ function Citation() {
 /* la journée, telle qu'elle apparaît sur l'accueil */
 function JourneeAccueil({ taches, onMaj, items, colleges, onOuvrirItem, onPlanning }) {
   const auj_ = iso(new Date());
-  const duJour = taches.filter((t) => t.date === auj_).map(normaliser).sort((a, b) => a.debut - b.debut);
+  const [jourVu, setJourVu] = useState(auj_);
+
+  /* Les sept prochains jours, pour voir la suite sans quitter l'accueil. */
+  const semaine = [...Array(7)].map((_, k) => {
+    const d2 = new Date();
+    d2.setDate(d2.getDate() + k);
+    const j = iso(d2);
+    const l = taches.filter((t) => t.date === j);
+    return { jour: j, d: d2, n: l.length, faits: l.filter((t) => t.fait).length };
+  });
+
+  const duJour = taches.filter((t) => t.date === jourVu).map(normaliser).sort((a, b) => a.debut - b.debut);
   const faits = duJour.filter((t) => t.fait).length;
   const h = new Date().getHours();
   const enCours = duJour.find((t) => !t.fait && h >= t.debut && h < t.debut + (t.duree || 1));
@@ -2695,14 +2743,17 @@ function JourneeAccueil({ taches, onMaj, items, colleges, onOuvrirItem, onPlanni
   const restantes = duJour.filter((t) => !t.fait);
   const heures = restantes.reduce((s, t) => s + (t.duree || 1), 0);
 
-  const d = new Date();
-  const titre = `${JOURS[(d.getDay() + 6) % 7] === "lun" ? "Lundi" : ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"][(d.getDay() + 6) % 7]} ${d.getDate()} ${MOIS[d.getMonth()]}`;
+  const d = new Date(jourVu + "T12:00:00");
+  const titre = `${["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"][(d.getDay() + 6) % 7]} ${d.getDate()} ${MOIS[d.getMonth()]}`;
+  const cEstAuj = jourVu === auj_;
 
   return (
     <div className="mb-4">
       <div className="flex items-end justify-between mb-3 px-1">
         <div>
-          <p className="text-xs uppercase" style={{ letterSpacing: "0.12em", color: T.ink2 }}>Aujourd'hui</p>
+          <p className="text-xs uppercase" style={{ letterSpacing: "0.12em", color: T.ink2 }}>
+            {cEstAuj ? "Aujourd'hui" : "À venir"}
+          </p>
           <p style={{ fontFamily: serif, fontSize: 25, lineHeight: 1.15 }}>{titre}</p>
         </div>
         <button onClick={onPlanning} className="px-4 py-2 text-xs doux"
@@ -2711,10 +2762,40 @@ function JourneeAccueil({ taches, onMaj, items, colleges, onOuvrirItem, onPlanni
         </button>
       </div>
 
+      {/* les sept prochains jours */}
+      <div className="flex gap-1.5 mb-3" style={{ overflowX: "auto", paddingBottom: 2 }}>
+        {semaine.map(({ jour, d: d2, n, faits: f2 }) => {
+          const actif = jour === jourVu;
+          const tout = n > 0 && f2 === n;
+          return (
+            <button key={jour} onClick={() => setJourVu(jour)}
+              className="doux shrink-0 flex flex-col items-center justify-center"
+              style={{ width: 46, height: 58, borderRadius: 15,
+                background: actif ? T.accent : T.card,
+                border: `1px solid ${actif ? T.accent : T.line}` }}>
+              <span style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.06em",
+                color: actif ? "rgba(255,255,255,0.85)" : T.ink2 }}>
+                {JOURS[(d2.getDay() + 6) % 7]}
+              </span>
+              <span style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.15,
+                color: actif ? "#fff" : T.ink }}>{d2.getDate()}</span>
+              <span style={{ height: 5, marginTop: 2 }}>
+                {n > 0 && (
+                  <span style={{ display: "inline-block", width: tout ? 10 : 5, height: 5, borderRadius: 999,
+                    background: actif ? "rgba(255,255,255,0.9)" : tout ? T.haut : T.accent }} />
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {duJour.length === 0 ? (
         <button onClick={onPlanning} className="w-full text-left ombre doux"
           style={{ background: T.card, borderRadius: 24, padding: "26px 22px", border: `1px dashed ${T.line}` }}>
-          <p style={{ fontFamily: serif, fontSize: 19, marginBottom: 6 }}>Rien de prévu aujourd'hui</p>
+          <p style={{ fontFamily: serif, fontSize: 19, marginBottom: 6 }}>
+            {cEstAuj ? "Rien de prévu aujourd'hui" : "Rien de prévu ce jour-là"}
+          </p>
           <p className="text-sm" style={{ color: T.ink2, lineHeight: 1.6 }}>
             Appuie ici pour poser tes items sur la journée. Deux blocs de deux heures suffisent à faire avancer un collège.
           </p>
@@ -4174,6 +4255,7 @@ function App() {
   const [taches, setTaches] = useState([]);
   const [dossiers, setDossiers] = useState([]);
   const [seances, setSeances] = useState([]);
+  const [notesJour, setNotesJour] = useState({});
   const [echec, setEchec] = useState(false);
   const [poids, setPoids] = useState(0);
   const [place, setPlace] = useState(null);
@@ -4211,6 +4293,7 @@ function App() {
         setTaches(d.taches || []);
         setDossiers(d.dossiers || []);
         setSeances(d.seances || []);
+        setNotesJour(d.notesJour || {});
       } catch {
         try { /* reprise de l'ancienne version */
           const v = JSON.parse((await window.storage.get(KEY_ANCIEN)).value);
@@ -4300,7 +4383,7 @@ function App() {
       try { await poserLourd("fiches", fiches); } catch (e) { fichesOk = false; }
 
       const donnees = JSON.stringify({ colleges, items, cartes, qcms, annales, resultats,
-        erreurs, cours, taches, dossiers, seances, fiches: [] });
+        erreurs, cours, taches, dossiers, seances, notesJour, fiches: [] });
       setPoids(donnees.length);
       try {
         await window.storage.set(KEY, donnees);
@@ -4316,7 +4399,7 @@ function App() {
       }
     }, 500);
     return () => clearTimeout(t);
-  }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances, pret]);
+  }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances, notesJour, pret]);
 
   /* mesure du temps passé entre deux réponses, plafonné pour ignorer les pauses */
   const horlogeRep = useRef(Date.now());
@@ -4327,14 +4410,15 @@ function App() {
       date: auj(), t: Date.now(), ms }]);
   };
 
-  /* Marquer sa compréhension compte un passage sur l'item. Le quatrième
-     paramètre sert au retour en arrière : il restaure la liste d'origine. */
-  const definirComp = (id, v, date, tours) =>
+  /* `marques` compte uniquement les appuis sur un bouton de compréhension.
+     Il est distinct de `tours`, qui bouge aussi quand une tâche est cochée
+     dans le planning : c'est ce mélange qui faussait le compteur. */
+  const definirComp = (id, v, date, marques) =>
     setItems((l) => l.map((i) => {
       if (i.id !== id) return i;
       const base = { ...i, comp: v, dateComp: v === 0 ? null : (date !== undefined ? date : auj()) };
-      if (tours !== undefined) return { ...base, tours };
-      if (date === undefined && v > 0) return { ...base, tours: [...(i.tours || []), auj()] };
+      if (marques !== undefined) return { ...base, marques };
+      if (date === undefined && v > 0) return { ...base, marques: [...(i.marques || []), auj()] };
       return base;
     }));
 
@@ -4439,7 +4523,7 @@ function App() {
 
   const exporter = () => {
     const b = new Blob([JSON.stringify({ colleges, items, cartes, qcms, annales, resultats,
-      erreurs, cours, fiches, taches, dossiers, seances }, null, 2)], { type: "application/json" });
+      erreurs, cours, fiches, taches, dossiers, seances, notesJour }, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b); a.download = `edn-go-${VERSION}-${auj()}.json`; a.click();
     URL.revokeObjectURL(a.href);
@@ -4462,6 +4546,7 @@ function App() {
           if (d.taches) setTaches(d.taches);
           if (d.dossiers) setDossiers(d.dossiers);
           if (d.seances) setSeances(d.seances);
+          if (d.notesJour) setNotesJour(d.notesJour);
           setAlerte(`Sauvegarde restaurée : ${(d.items || []).length} items, ${(d.qcms || []).length} QCM, `
             + `${(d.cartes || []).length} flashcards, ${(d.fiches || []).length} fiche(s). Les PDF ne sont pas dans l'export.`);
           return;
@@ -4543,27 +4628,27 @@ function App() {
         ::-webkit-scrollbar-thumb { background: #2E4863; border-radius: 99px; border: 2px solid ${T.paper}; }
         ::-webkit-scrollbar-thumb:hover { background: #3E5C7C; }
         * { scrollbar-width: thin; scrollbar-color: #2E4863 transparent; }
-        .doux { transition: background 180ms ease, color 180ms ease, width 340ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.22,1,0.36,1); }
+        .doux { transition: background 180ms ease, color 180ms ease, width 340ms ease, box-shadow 180ms ease; }
         @keyframes entree { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
         .vue { animation: entree 240ms cubic-bezier(0.22, 1, 0.36, 1); }
-        /* changement d'onglet : le contenu monte doucement, sans clignotement */
-        @keyframes onglet { from { opacity: 0; transform: translateY(14px) scale(0.995); } to { opacity: 1; transform: none; } }
-        .onglet { animation: onglet 300ms cubic-bezier(0.22, 1, 0.36, 1); }
-        /* les cartes se soulèvent légèrement au toucher */
-        .doux:active { transform: scale(0.975); }
-        .case { transition: transform 180ms cubic-bezier(0.22,1,0.36,1), background 180ms ease, border-color 180ms ease; }
-        .case:active { transform: scale(0.93); }
-        /* les listes apparaissent en cascade très courte */
-        @keyframes cascade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-        .ombre { transition: box-shadow 200ms ease, transform 200ms cubic-bezier(0.22,1,0.36,1); }
+        /* Changement d'onglet : un simple fondu. Aucune transformation, car
+           translate et scale créent un contexte qui fausse les coordonnées
+           du toucher pour les blocs déplaçables du planning. */
+        @keyframes onglet { from { opacity: 0.35; } to { opacity: 1; } }
+        .onglet { animation: onglet 200ms ease-out; }
+        /* Retour tactile limité aux cases de la grille, qui ne se glissent pas. */
+        .case { transition: background 180ms ease, border-color 180ms ease; }
         @media (prefers-reduced-motion: reduce) {
           .onglet, .vue { animation: none; }
-          .doux:active, .case:active { transform: none; }
         }
         @keyframes voletSort { from { transform: rotateX(0deg); } to { transform: rotateX(-90deg); } }
         @keyframes voletEntre { from { transform: rotateX(90deg); } to { transform: rotateX(0deg); } }
         button, .doux { -webkit-tap-highlight-color: transparent; }
+        /* Le retour tactile est retiré des éléments déplaçables : une
+           transformation pendant un glissement décale les coordonnées du
+           pointeur et fige le déplacement. */
         button:active { transform: scale(0.97); }
+        .fixe, .fixe:active, .fixe *:active { transform: none !important; }
         .relief { transition: transform 180ms cubic-bezier(0.22,1,0.36,1), box-shadow 180ms ease, background 180ms ease, filter 180ms ease; }
         @media (hover: hover) {
           .relief:hover { transform: scale(1.055); box-shadow: 0 8px 22px rgba(0,0,0,0.34); filter: brightness(1.14); z-index: 3; }
@@ -4728,6 +4813,8 @@ function App() {
         ) : vue === "todo" ? (
           <Planning taches={taches} onMaj={majTaches} items={items} colleges={colleges}
             onComprendre={(id, v) => definirComp(id, v)}
+            notesJour={notesJour}
+            onNoteJour={(j, v) => setNotesJour((n) => ({ ...n, [j]: v }))}
             onNote={(id, v) => setItems((l) => l.map((i) => i.id === id ? { ...i, note: v } : i))}
             onOuvrirItem={(id) => { const it = items.find((x) => x.id === id); setVue("colleges"); setCollegeId(it.collegeId); setItemId(id); }} />
         ) : vue === "exercice" ? (
@@ -5536,13 +5623,13 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [],
   const pctTotal = avancement(items);
 
   const poser = (i, v) => {
-    setHisto((h) => [...h.slice(-19), { id: i.id, comp: i.comp || 0, date: i.dateComp || null, tours: i.tours || [] }]);
+    setHisto((h) => [...h.slice(-19), { id: i.id, comp: i.comp || 0, date: i.dateComp || null, marques: i.marques || [] }]);
     onComp(i.id, v);
   };
   const annuler = () => {
     const d = histo[histo.length - 1];
     if (!d) return;
-    onComp(d.id, d.comp, d.date, d.tours);
+    onComp(d.id, d.comp, d.date, d.marques);
     setHisto((h) => h.slice(0, -1));
   };
 
@@ -5556,12 +5643,18 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [],
 
   return (
     <div>
+      {/* Bouton flottant : il reste atteignable quel que soit le défilement. */}
+      <button onClick={() => setPanneau(!panneau)}
+        aria-label={panneau ? "Masquer le panneau" : "Afficher le panneau"}
+        className="flex items-center justify-center doux ombre"
+        style={{ position: "fixed", left: 14, bottom: 22, zIndex: 40,
+          width: 50, height: 50, borderRadius: 999,
+          background: panneau ? T.accent : T.card, color: panneau ? "#fff" : T.accent,
+          border: `1px solid ${panneau ? T.accent : T.line}`, fontSize: 17, fontWeight: 700 }}>
+        {panneau ? "«" : "»"}
+      </button>
+
       <div className="flex items-start gap-3 mb-3">
-        <button onClick={() => setPanneau(!panneau)} className="flex items-center justify-center doux shrink-0"
-          style={{ width: 38, height: 38, borderRadius: 999, background: panneau ? T.accent : T.card,
-            color: panneau ? "#fff" : T.accent, border: `1px solid ${panneau ? T.accent : T.line}`, fontSize: 15 }}>
-          {panneau ? "«" : "»"}
-        </button>
         <div className="flex-1">
           <h2 style={{ fontFamily: serif, fontSize: 24 }}>La grille</h2>
           <p className="text-xs mt-1" style={{ color: T.ink2 }}>
@@ -5661,16 +5754,15 @@ function Grille({ colleges, items, scores, resultats, cartes, qcms, taches = [],
                         width: 62, height: 58, borderRadius: 14, background: N.bg,
                         border: `1.5px solid ${sel === i.id ? "#fff" : r >= 0 ? T.moyen : N.bord}`,
                         position: "relative", overflow: "hidden",
-                        transform: sel === i.id ? "scale(1.06)" : "none",
-                        transition: "transform 180ms cubic-bezier(0.22,1,0.36,1)",
+                        boxShadow: sel === i.id ? "0 0 0 2px rgba(255,255,255,0.35)" : "none",
                       }}>
                       <span style={{ fontSize: 16, fontWeight: 800, color: "#FFFFFF", lineHeight: 1.05 }}>{i.numero}</span>
                       {i.dateComp && (
                         <span style={{ fontSize: 8.5, color: "#FFFFFF", opacity: 0.72, lineHeight: 1.25 }}>{dCourte(i.dateComp)}</span>
                       )}
                       {(() => {
-                        /* Nombre de passages : des points jusqu'à cinq, un compte au-delà. */
-                        const t = (i.tours || []).length;
+                        /* Appuis sur un bouton de compréhension : points jusqu'à cinq, compte au-delà. */
+                        const t = (i.marques || []).length;
                         if (!t) return null;
                         if (t <= 5) return (
                           <span className="flex gap-0.5" style={{ marginTop: 2 }}>
