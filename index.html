@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v75";
+const VERSION = "v76";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -2038,6 +2038,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
   const [noter, setNoter] = useState(null);
   const [noteOuverte, setNoteOuverte] = useState(false);
   const [apercuModele, setApercuModele] = useState(null);
+  const [remplace, setRemplace] = useState(null);
 
   /* Placement automatique des révisions échues, si l'option est active.
      Il ne s'applique qu'au jour même et une seule fois par journée, pour ne
@@ -2077,12 +2078,19 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
   const duJour = taches.filter((t) => t.date === jour).map(normaliser).sort((a, b) => a.debut - b.debut);
 
   const ajouter = (type, itemId, libelle) => {
-    onMaj([...taches, {
+    const nouveau = {
       id: Math.random().toString(36).slice(2, 9), date: jour, type,
       itemId: itemId || null, texte: libelle || "",
       debut: creneau, duree: Math.max(1, fin - creneau), fait: false, teinte: taches.length % BLOCS.length,
-    }]);
-    setTexte(""); setCreneau(null);
+    };
+    /* si l'on remplit un créneau « à définir », on le remplace au lieu d'empiler */
+    if (remplace) {
+      const anc = taches.find((t) => t.id === remplace);
+      onMaj(taches.map((t) => t.id === remplace
+        ? { ...nouveau, id: t.id, debut: t.debut, duree: t.duree, teinte: anc ? anc.teinte : nouveau.teinte }
+        : t));
+    } else onMaj([...taches, nouveau]);
+    setTexte(""); setCreneau(null); setRemplace(null);
   };
   const modifier = (id, patch) => onMaj(taches.map((t) => t.id === id ? { ...normaliser(t), ...patch } : t));
   const supprimer = (id) => { onMaj(taches.filter((t) => t.id !== id)); setSelection(null); };
@@ -2130,7 +2138,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
   /* Construit la journée que produirait un modèle, sans l'appliquer.
      Les créneaux d'étude reçoivent d'abord les révisions échues du jour,
      puis les items les plus fragiles. */
-  const construireModele = (m) => {
+  const construireModele = (m, garnir) => {
     const occupees = duJour.map((t) => [t.debut, t.debut + (t.duree || 1)]);
     const libre = (a, b) => !occupees.some(([x, y]) => a < y && b > x);
     const dejaPoses = new Set(taches.filter((t) => t.itemId).map((t) => t.itemId));
@@ -2153,9 +2161,11 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
       const conflit = !libre(c.debut, c.debut + c.duree);
       let type = "perso", itemId = null, texte_ = c.texte, motif = null;
       if (c.texte === null) {
-        const x = file[k++];
-        if (x) { type = "item"; itemId = x.i.id; texte_ = ""; motif = x.motif; }
-        else texte_ = "Révision libre";
+        if (garnir) {
+          const x = file[k++];
+          if (x) { type = "item"; itemId = x.i.id; texte_ = ""; motif = x.motif; }
+          else texte_ = "À définir";
+        } else texte_ = "À définir";
       }
       prevus.push({
         id: Math.random().toString(36).slice(2, 9), date: jour, type, itemId, texte: texte_,
@@ -2381,7 +2391,8 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
               const actif = apercuModele && apercuModele.id === m.id;
               return (
                 <button key={m.id}
-                  onClick={() => setApercuModele(actif ? null : { id: m.id, nom: m.nom, prevus: construireModele(m) })}
+                  onClick={() => setApercuModele(actif ? null
+                    : { id: m.id, nom: m.nom, garni: true, prevus: construireModele(m, true) })}
                   className="text-left doux"
                   style={{ background: actif ? T.accentPale : T.paper, borderRadius: 16, padding: "12px 13px",
                     border: `1px solid ${actif ? T.accent : T.line}` }}>
@@ -2407,6 +2418,20 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                   <span className="text-xs" style={{ color: T.ink2 }}>{retenus.length} créneau(x)</span>
                 </div>
 
+                <div className="flex gap-2 mb-3">
+                  {[[true, "Avec mes items"], [false, "Créneaux vides"]].map(([g, l]) => (
+                    <button key={l} onClick={() => setApercuModele({ ...apercuModele, garni: g,
+                      prevus: construireModele(MODELES.find((m2) => m2.id === apercuModele.id), g) })}
+                      className="flex-1 py-2 text-xs doux"
+                      style={{ borderRadius: 999, fontWeight: 700,
+                        background: apercuModele.garni === g ? T.accent : "transparent",
+                        color: apercuModele.garni === g ? "#fff" : T.ink2,
+                        border: `1px solid ${apercuModele.garni === g ? T.accent : T.line}` }}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+
                 {p.map((t, z) => {
                   const it = t.itemId ? items.find((x) => x.id === t.itemId) : null;
                   const col = it ? colleges.find((x) => x.id === it.collegeId) : null;
@@ -2422,6 +2447,8 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                         background: it ? pc.fg : T.line }} />
                       <span className="flex-1 min-w-0">
                         <span className="block text-xs" style={{ lineHeight: 1.4,
+                          fontStyle: !it && t.texte === "À définir" ? "italic" : "normal",
+                          color: !it && t.texte === "À définir" ? T.ink2 : undefined,
                           textDecoration: t.conflit ? "line-through" : "none" }}>
                           {it ? `${it.numero}. ${it.titre}` : t.texte}
                         </span>
@@ -2442,11 +2469,14 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                       color: "#fff", fontWeight: 700, fontSize: 13 }}>
                     Appliquer à cette journée
                   </button>
-                  <button onClick={() => setApercuModele({ ...apercuModele, prevus: construireModele(MODELES.find((m) => m.id === apercuModele.id)) })}
-                    className="px-4 py-3 text-xs doux"
-                    style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2, fontWeight: 600 }}>
-                    Autres items
-                  </button>
+                  {apercuModele.garni && (
+                    <button onClick={() => setApercuModele({ ...apercuModele,
+                      prevus: construireModele(MODELES.find((m2) => m2.id === apercuModele.id), true) })}
+                      className="px-4 py-3 text-xs doux"
+                      style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2, fontWeight: 600 }}>
+                      Autres items
+                    </button>
+                  )}
                 </div>
                 {ecartes > 0 && (
                   <p className="text-xs mt-2" style={{ color: T.ink2 }}>
@@ -2557,6 +2587,14 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                   transition: enCours ? "none" : "top 140ms ease, height 140ms ease, left 140ms ease, width 140ms ease",
                 }}>
                 <div onPointerDown={(e) => { setSelection(t.id); prendre(e, t, "debut"); }}
+                  onClick={(e) => {
+                    /* un créneau laissé « à définir » s'ouvre directement en saisie */
+                    if (t.type === "perso" && t.texte === "À définir" && !glisse) {
+                      e.stopPropagation();
+                      setRemplace(t.id); setCreneau(t.debut);
+                      setFin(t.debut + (t.duree || 1)); setTexte("");
+                    }
+                  }}
                   style={{ padding: "7px 10px", height: "100%", cursor: "grab", touchAction: "none" }}>
                   <span className="flex items-start gap-2">
                     <span onPointerDown={(e) => e.stopPropagation()}
@@ -2579,6 +2617,11 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                         textDecoration: t.fait ? "line-through" : "none" }}>
                         {i ? `${i.numero}. ${i.titre}` : t.texte}
                       </span>
+                      {!i && t.texte === "À définir" && (
+                        <span className="block text-xs mt-0.5" style={{ color: b.fg, opacity: 0.7 }}>
+                          appuie pour choisir un item
+                        </span>
+                      )}
                       {i && (i.comp || 0) > 0 && (
                         <span className="inline-block mt-1 px-2 py-0.5" style={{
                           borderRadius: 999, fontSize: 10, fontWeight: 800,
@@ -2639,13 +2682,13 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                   ))}
                 </select>
                 <div className="flex-1" />
-                <button onClick={() => { setCreneau(null); setTexte(""); }} className="px-1 text-sm" style={{ color: T.ink2 }}>×</button>
+                <button onClick={() => { setCreneau(null); setTexte(""); setRemplace(null); }} className="px-1 text-sm" style={{ color: T.ink2 }}>×</button>
               </div>
 
               <input autoFocus value={texte} onChange={(e) => setTexte(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && texte.trim()) ajouter("perso", null, texte.trim());
-                  if (e.key === "Escape") { setCreneau(null); setTexte(""); }
+                  if (e.key === "Escape") { setCreneau(null); setTexte(""); setRemplace(null); }
                 }}
                 placeholder="Numéro d'item, mot-clé, ou autre chose…"
                 className="w-full px-3 py-2 text-sm" style={{ borderRadius: 12, border: `1px solid ${T.line}` }} />
