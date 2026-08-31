@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v76";
+const VERSION = "v80";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -489,7 +489,7 @@ const ONGLETS = [
   ["stats",     "Statistiques", "◫", "Temps et volume", "#8DD16A", "#111F0E"],
   ["horloge",   "Horloge",   "◷", "Minuteur, chrono",   "#7C9BF0", "#101529"],
   ["resultats", "Résultats", "◔", "Mes scores",         "#EFC94C", "#211D0C"],
-  ["erreurs",   "Erreurs / Mémos", "!", "Ce que je rate, ce que je garde", "#F08A6A", "#241510"],
+  ["erreurs",   "Erreurs / Mémos", "!", "Ce que je rate, ce que je garde", "#FF5A5A", "#2A0F12"],
 ];
 const teinteOnglet = (v) => {
   const o = ONGLETS.find(([x]) => x === v);
@@ -4619,6 +4619,18 @@ function App() {
     if (itemsAjoutes > 0) msg.push(`${itemsAjoutes} item(s) ajouté(s)`);
     if (itemsFusionnes) msg.push(`${itemsFusionnes} doublon(s) fusionné(s)`);
     if (colsSupprimes > 0) msg.push(`${colsSupprimes} collège(s) en double supprimé(s)`);
+    /* Les compteurs de passages ont pu être gonflés par des appuis répétés
+       le même jour : on ne garde qu'une marque par date. */
+    const aNettoyer = nouveauxItems.filter((i) => {
+      const m = i.marques || [];
+      return m.length !== new Set(m).size;
+    }).length;
+    if (aNettoyer) {
+      setItems((l) => l.map((i) => (i.marques && i.marques.length !== new Set(i.marques).size)
+        ? { ...i, marques: [...new Set(i.marques)] } : i));
+      msg.push(`${aNettoyer} compteur(s) de passage corrigé(s)`);
+    }
+
     if (msg.length) setAlerte("Programme mis à jour : " + msg.join(", ") + ". Tes QCM et fiches ont suivi.");
   }, [pret]);
 
@@ -4667,7 +4679,12 @@ function App() {
       if (i.id !== id) return i;
       const base = { ...i, comp: v, dateComp: v === 0 ? null : (date !== undefined ? date : auj()) };
       if (marques !== undefined) return { ...base, marques };
-      if (date === undefined && v > 0) return { ...base, marques: [...(i.marques || []), auj()] };
+      /* Un passage par jour au maximum : hésiter entre deux couleurs, ou
+         corriger son choix, ne doit pas gonfler le compteur. */
+      const liste = i.marques || [];
+      if (date === undefined && v > 0 && !liste.includes(auj())) {
+        return { ...base, marques: [...liste, auj()] };
+      }
       return base;
     }));
 
@@ -7382,16 +7399,44 @@ function erreursEnTexte(liste, items, titre) {
   return t;
 }
 
+/* Devine les items concernés par un texte libre : un numéro cité, puis les
+   mots significatifs communs avec les intitulés. */
+function itemsProbables(texte, items, colleges) {
+  const t = sansAccent(String(texte || "").toLowerCase());
+  if (t.length < 4) return [];
+
+  const vides = new Set(["dans","pour","avec","chez","cette","cette","les","des","une","aux",
+    "que","qui","est","sont","pas","plus","mais","donc","son","sur","par","the","and","tout",
+    "faire","penser","revoir","attention","oublie","erreur","note","memo","bien","comme"]);
+  const mots = t.split(/[^a-z0-9]+/).filter((m) => m.length > 3 && !vides.has(m));
+  const nums = (String(texte).match(/\b\d{1,3}\b/g) || []).map(Number);
+
+  const notes = items.map((i) => {
+    let p = 0;
+    if (nums.includes(i.numero)) p += 100;
+    const titre = sansAccent(i.titre.toLowerCase());
+    mots.forEach((m) => {
+      if (titre.includes(m)) p += m.length >= 6 ? 12 : 7;
+      else if (m.length > 5 && titre.includes(m.slice(0, m.length - 2))) p += 4;
+    });
+    const c = colleges.find((x) => x.id === i.collegeId);
+    if (c && mots.some((m) => sansAccent(c.nom.toLowerCase()).includes(m))) p += 3;
+    return { i, p };
+  }).filter((x) => x.p >= 7).sort((a, b) => b.p - a.p);
+
+  return notes.slice(0, 4).map((x) => x.i);
+}
+
 function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, onSupprimer, onOuvrir }) {
   const [section, setSection] = useState("erreurs");
   const [texte, setTexte] = useState("");
-  const [lien, setLien] = useState("");
   const [rech, setRech] = useState("");
   const [groupe, setGroupe] = useState("college");
   const [deplie, setDeplie] = useState(null);
   const [edite, setEdite] = useState(null);
   const [brouillon, setBrouillon] = useState("");
   const [envoi, setEnvoi] = useState(null);
+  const [aRanger, setARanger] = useState(null);
 
   /* Une entrée appartient aux erreurs si c'est un QCM raté ou si elle a été
      écrite dans la section erreurs ; sinon c'est un mémo. */
@@ -7420,12 +7465,16 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
     return groupe === "date" ? b.localeCompare(a) : a.localeCompare(b);
   });
 
-  const choisi = items.find((i) => i.id === lien);
+  const valider = (itemId) => {
+    onAjouter(aRanger, itemId, section === "memos" ? "memo" : "erreur");
+    setTexte(""); setARanger(null); setRech("");
+  };
+
   const trouves = rech.trim()
     ? [...items].filter((i) => correspond(i, rech)).sort((a, b) => a.numero - b.numero).slice(0, 6)
     : [];
 
-  const ERREUR = { fg: "#F08A6A", bg: "#241510" };
+  const ERREUR = { fg: "#FF5A5A", bg: "#2A0F12" };
   const MEMO = { fg: "#7FD8D0", bg: "#0F2E2C" };
   const teinte = section === "erreurs" ? ERREUR : MEMO;
 
@@ -7452,53 +7501,71 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
 
       {/* saisie */}
       <textarea value={texte} onChange={(e) => setTexte(e.target.value)} rows={3}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && texte.trim()) setARanger(texte.trim());
+        }}
         placeholder={section === "erreurs"
           ? "Ce que tu as raté, et pourquoi…"
           : "Un rappel, une astuce, quelque chose à ne pas oublier…"}
         className="w-full p-3 text-sm mb-2"
         style={{ borderRadius: 14, border: `1px solid ${T.line}`, background: T.card, lineHeight: 1.6 }} />
 
-      {choisi ? (
-        <div className="flex items-center gap-2 mb-2">
-          <span className="flex-1 min-w-0 text-xs px-3 py-2" style={{
-            background: pal((colleges.find((c) => c.id === choisi.collegeId) || {}).nom || "").bg,
-            borderRadius: 12, color: pal((colleges.find((c) => c.id === choisi.collegeId) || {}).nom || "").fg }}>
-            Item {choisi.numero} — {choisi.titre}
-          </span>
-          <button onClick={() => { setLien(""); setRech(""); }} className="text-sm px-2" style={{ color: T.ink2 }}>✕</button>
-        </div>
+      {/* Étape 1 : on valide le texte. Étape 2 : on choisit où le ranger. */}
+      {!aRanger ? (
+        <button disabled={!texte.trim()} onClick={() => setARanger(texte.trim())}
+          className="px-5 py-2.5 text-sm doux mb-6"
+          style={{ background: texte.trim() ? teinte.fg : "#24384F", color: texte.trim() ? "#0E1A29" : T.ink2,
+            borderRadius: 999, fontWeight: 700 }}>
+          {section === "erreurs" ? "Noter cette erreur" : "Ajouter ce mémo"}
+        </button>
       ) : (
-        <>
-          <input value={rech} onChange={(e) => setRech(e.target.value)}
-            placeholder="Rattacher à un item — numéro ou mot-clé"
-            className="w-full px-3 py-2.5 text-sm mb-1"
-            style={{ borderRadius: 12, border: `1px solid ${T.line}`, background: T.card }} />
-          {trouves.map((i) => {
-            const c = colleges.find((x) => x.id === i.collegeId);
-            const p = pal(c ? c.nom : "");
-            return (
-              <button key={i.id} onClick={() => { setLien(i.id); setRech(""); }}
-                className="w-full text-left flex items-center gap-2 doux mb-1"
-                style={{ background: T.paper, borderRadius: 10, padding: "8px 10px" }}>
-                <span className="shrink-0" style={{ width: 4, height: 20, borderRadius: 999, background: p.fg }} />
-                <span className="shrink-0 text-xs" style={{ width: 32, color: T.ink2, fontWeight: 700 }}>{i.numero}</span>
-                <span className="flex-1 min-w-0 text-xs truncate">{i.titre}</span>
-              </button>
-            );
-          })}
-          {rech.trim() && !trouves.length && (
-            <p className="text-xs mb-1" style={{ color: T.ink2 }}>Aucun item ne correspond.</p>
-          )}
-        </>
-      )}
+        <div className="ombre vue mb-6" style={{ background: T.card, borderRadius: 18, padding: "14px 15px" }}>
+          <div className="flex items-baseline justify-between mb-2">
+            <span className="text-xs uppercase" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+              Ranger dans quel item ?
+            </span>
+            <button onClick={() => { setARanger(null); setRech(""); }} className="text-xs px-1" style={{ color: T.ink2 }}>
+              Annuler
+            </button>
+          </div>
 
-      <button disabled={!texte.trim()}
-        onClick={() => { onAjouter(texte.trim(), lien || null, section === "memos" ? "memo" : "erreur"); setTexte(""); setLien(""); setRech(""); }}
-        className="px-5 py-2.5 text-sm doux mb-6"
-        style={{ background: texte.trim() ? teinte.fg : "#24384F", color: texte.trim() ? "#0E1A29" : T.ink2,
-          borderRadius: 999, fontWeight: 700 }}>
-        {section === "erreurs" ? "Noter cette erreur" : "Ajouter ce mémo"}
-      </button>
+          {(() => {
+            const sug = itemsProbables(aRanger, items, colleges);
+            const liste = rech.trim() ? trouves : sug;
+            return (
+              <>
+                {liste.length > 0 ? liste.map((i) => {
+                  const c = colleges.find((x) => x.id === i.collegeId);
+                  const p = pal(c ? c.nom : "");
+                  return (
+                    <button key={i.id} onClick={() => valider(i.id)}
+                      className="w-full text-left flex items-center gap-2.5 doux mb-1.5"
+                      style={{ background: p.bg, borderRadius: 12, padding: "10px 12px" }}>
+                      <span className="shrink-0" style={{ width: 4, height: 24, borderRadius: 999, background: p.fg }} />
+                      <span className="shrink-0 text-xs" style={{ width: 34, color: p.fg, fontWeight: 800 }}>{i.numero}</span>
+                      <span className="flex-1 min-w-0 text-xs truncate" style={{ color: p.fg }}>{i.titre}</span>
+                    </button>
+                  );
+                }) : (
+                  <p className="text-xs mb-2" style={{ color: T.ink2 }}>
+                    {rech.trim() ? "Aucun item ne correspond." : "Aucune suggestion : cherche ci-dessous."}
+                  </p>
+                )}
+
+                <input value={rech} onChange={(e) => setRech(e.target.value)}
+                  placeholder="Chercher un autre item — numéro ou mot-clé"
+                  className="w-full px-3 py-2.5 text-sm mt-1 mb-2"
+                  style={{ borderRadius: 12, border: `1px solid ${T.line}`, background: T.paper }} />
+
+                <button onClick={() => valider(null)} className="w-full py-2.5 text-xs doux"
+                  style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2, fontWeight: 600 }}>
+                  Enregistrer sans item
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
 
       {visibles.length === 0 ? (
         <p className="text-sm" style={{ color: T.ink2, lineHeight: 1.7 }}>
