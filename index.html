@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v80";
+const VERSION = "v82";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1865,7 +1865,11 @@ function ajoutRevision(taches, i, jour) {
 
 /* Items dont la révision arrive à échéance : calculée depuis la compréhension
    que tu as choisie dans la grille, sans rien saisir à la main. */
-function revisionsDuJour(items, jour) {
+/* Révisions échues au jour donné. Avec un horizon, on remonte aussi celles
+   qui arrivent dans les jours suivants : sans cela, un item coché en J7
+   resterait invisible pendant une semaine. */
+function revisionsDuJour(items, jour, horizon) {
+  const h = horizon || 0;
   const due = [];
   items.forEach((i) => {
     const n = Math.min(i.comp || 0, 4);
@@ -1873,13 +1877,15 @@ function revisionsDuJour(items, jour) {
     const d = new Date(i.dateComp + "T12:00:00");
     d.setDate(d.getDate() + NIVEAUX_C[n].jours);
     const ech = iso(d);
-    if (ech <= jour) due.push({ i, ech, retard: Math.round((new Date(jour + "T12:00:00") - new Date(ech + "T12:00:00")) / 86400000) });
+    const ecart = Math.round((new Date(jour + "T12:00:00") - new Date(ech + "T12:00:00")) / 86400000);
+    if (ecart >= 0) due.push({ i, ech, retard: ecart, avenir: false });
+    else if (-ecart <= h) due.push({ i, ech, retard: ecart, avenir: true });
   });
   return due.sort((a, b) => b.retard - a.retard || (a.i.comp || 0) - (b.i.comp || 0));
 }
 
 function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem, auto, onAuto }) {
-  const due = revisionsDuJour(items, jour);
+  const due = revisionsDuJour(items, jour, 7);
 
   /* Pour chaque item dû, on regarde s'il est déjà planifié quelque part, et
      si la tâche correspondante a été cochée. Trois états, trois traitements :
@@ -1911,19 +1917,22 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
   const jours = (a, b) =>
     Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
 
-  const enrichi = due.map(({ i, retard }) => ({ i, retard, ...etatDe(i.id) }))
-    .filter((x) => !(x.etat === "fait" && x.date && jours(x.date, jour) > 3));
+  const enrichi = due.map(({ i, retard, ech, avenir }) => ({ i, retard, ech, avenir, ...etatDe(i.id) }))
+    .filter((x) => !(x.etat === "fait" && x.date && jours(x.date, jour) > 3))
+    .map((x) => (x.avenir && x.etat === "libre" ? { ...x, etat: "avenir" } : x));
 
-  const rang = { libre: 0, place: 1, fait: 2 };
+  const rang = { libre: 0, place: 1, avenir: 2, fait: 3 };
   enrichi.sort((a, b) => {
     if (rang[a.etat] !== rang[b.etat]) return rang[a.etat] - rang[b.etat];
     if (a.etat === "place") return (a.date || "").localeCompare(b.date || "");
     if (a.etat === "fait") return (b.date || "").localeCompare(a.date || "");
+    if (a.etat === "avenir") return (a.ech || "").localeCompare(b.ech || "");
     return b.retard - a.retard;
   });
 
   const aPlacer = enrichi.filter((x) => x.etat === "libre").length;
   const faits = enrichi.filter((x) => x.etat === "fait").length;
+  const aVenir = enrichi.filter((x) => x.etat === "avenir").length;
 
   return (
     <div className="ombre" style={{ background: T.card, borderRadius: 22, padding: "14px 15px" }}>
@@ -1954,6 +1963,7 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
       </button>
       <p className="text-xs mb-3" style={{ color: T.ink2, lineHeight: 1.5 }}>
         D'après ce que tu as coché dans la grille.
+        {aVenir > 0 && ` ${aVenir} arrive(nt) dans les sept prochains jours.`}
         {faits > 0 && " Les révisions faites disparaissent au bout de trois jours."}
       </p>
 
@@ -1964,11 +1974,12 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
         </p>
       ) : (
         <div style={{ maxHeight: "56vh", overflowY: "auto" }}>
-          {enrichi.map(({ i, retard: r, etat, date, heure }) => {
+          {enrichi.map(({ i, retard: r, etat, date, heure, ech }) => {
             const N = NIVEAUX_C[Math.min(i.comp || 0, 4)];
             const c = colleges.find((x) => x.id === i.collegeId);
             const fait = etat === "fait";
             const place = etat === "place";
+            const avenir = etat === "avenir";
             return (
               <div key={i.id} className="mb-2"
                 style={{
@@ -1977,7 +1988,7 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
                   background: N.bg,
                   borderLeft: `4px solid ${N.bord}`,
                   borderRadius: 14, padding: "10px 12px",
-                  opacity: fait ? 0.4 : place ? 0.68 : 1,
+                  opacity: fait ? 0.4 : place ? 0.68 : avenir ? 0.8 : 1,
                 }}>
                 <button onClick={() => onOuvrirItem(i.id)} className="w-full text-left">
                   <span className="block text-xs" style={{ color: N.fg, fontWeight: 800, marginBottom: 2 }}>
@@ -2004,6 +2015,11 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
                       planifié {date === jour ? "aujourd'hui" : "le " + dCourte(date)}
                       {heure !== undefined ? " à " + hFmt(heure) : ""}
                     </span>
+                  ) : avenir ? (
+                    <span className="text-xs px-2 py-0.5" style={{ borderRadius: 999, fontWeight: 700,
+                      background: "rgba(255,255,255,0.1)", color: N.fg }}>
+                      à revoir {-r === 1 ? "demain" : `dans ${-r} j`} · {dCourte(ech)}
+                    </span>
                   ) : (
                     <span className="text-xs px-2 py-0.5" style={{
                       borderRadius: 999, fontWeight: 700,
@@ -2016,6 +2032,12 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
                     <button onClick={() => onPoser(i)} className="text-xs px-3 py-1 doux"
                       style={{ borderRadius: 999, background: N.bord, color: "#0E1A29", fontWeight: 700 }}>
                       Placer
+                    </button>
+                  )}
+                  {avenir && (
+                    <button onClick={() => onPoser(i, ech)} className="text-xs px-3 py-1 doux"
+                      style={{ borderRadius: 999, border: `1px solid ${N.bord}`, color: N.fg, fontWeight: 700 }}>
+                      Placer au {dCourte(ech)}
                     </button>
                   )}
                 </div>
@@ -2132,7 +2154,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
 
   /* Place un item à réviser dans le premier créneau libre. La durée dépend de
      la compréhension : moins c'est compris, plus le bloc est long. */
-  const placerRevision = (i) => onMaj(ajoutRevision(taches, i, jour));
+  const placerRevision = (i, quand) => onMaj(ajoutRevision(taches, i, quand || jour));
 
   /* remplit la journée avec un modèle, en piochant les items les plus faibles */
   /* Construit la journée que produirait un modèle, sans l'appliquer.
@@ -7622,13 +7644,42 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
           </div>
 
           {cles.map((cle) => {
-            const p = groupe === "college" && cle !== "Sans rattachement" ? pal(cle) : { fg: T.ink2, bg: T.card };
+            /* L'en-tête reprend toujours la couleur du collège concerné, y
+               compris quand on classe par item ou par date. */
+            const prem = paquets[cle][0];
+            const colGroupe = groupe === "college" && cle !== "Sans rattachement"
+              ? cle
+              : (colDe(prem) || {}).nom;
+            const p = colGroupe ? pal(colGroupe) : { fg: T.ink2, bg: T.card };
+
+            const itGroupe = groupe === "item" ? itemDe(prem) : null;
             return (
               <div key={cle} className="mb-5">
-                <div className="flex items-baseline gap-2 mb-2">
-                  <span style={{ width: 5, height: 15, borderRadius: 999, background: p.fg, display: "inline-block" }} />
-                  <span className="text-sm" style={{ color: p.fg, fontWeight: 700 }}>{cle}</span>
-                  <span className="text-xs" style={{ color: T.ink2 }}>{paquets[cle].length}</span>
+                <div className="flex items-center gap-2.5 mb-2.5"
+                  style={{ background: p.bg, borderRadius: 14, padding: "10px 13px",
+                    borderLeft: `5px solid ${p.fg}` }}>
+                  {itGroupe && (
+                    <span className="shrink-0 flex items-center justify-center"
+                      style={{ minWidth: 34, height: 26, padding: "0 7px", borderRadius: 8,
+                        background: p.fg, color: "#0E1A29", fontWeight: 900, fontSize: 14 }}>
+                      {itGroupe.numero}
+                    </span>
+                  )}
+                  <span className="flex-1 min-w-0">
+                    <span className="block" style={{ color: p.fg, fontWeight: 800, fontSize: 15,
+                      lineHeight: 1.3, letterSpacing: "-0.01em" }}>
+                      {itGroupe ? itGroupe.titre : cle}
+                    </span>
+                    {colGroupe && groupe !== "college" && (
+                      <span className="block text-xs mt-0.5" style={{ color: p.fg, opacity: 0.75 }}>
+                        {colGroupe}
+                      </span>
+                    )}
+                  </span>
+                  <span className="shrink-0 text-xs px-2 py-0.5" style={{ borderRadius: 999,
+                    background: "rgba(0,0,0,0.28)", color: p.fg, fontWeight: 800 }}>
+                    {paquets[cle].length}
+                  </span>
                 </div>
 
                 {paquets[cle].map((e) => {
@@ -7662,7 +7713,8 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
                           <span className="block text-xs mt-1" style={{ color: T.ink2 }}>
                             {dCourte(e.date) || e.date}
                             {e.qcm && ` · ${e.qcm.disc} discordance(s) · ${e.qcm.pts} pt`}
-                            {it && groupe !== "item" && <> · <button onClick={() => onOuvrir(it.id)} style={{ color: pc.fg }}>item {it.numero}</button></>}
+                            {it && groupe !== "item" && <> · <button onClick={() => onOuvrir(it.id)}
+                              style={{ color: pc.fg, fontWeight: 800 }}>item {it.numero}</button></>}
                             {!e.qcm && edite !== e.id && <> · <button onClick={() => { setEdite(e.id); setBrouillon(e.texte); }} style={{ color: T.accent }}>modifier</button></>}
                           </span>
                         </span>
