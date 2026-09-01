@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v84";
+const VERSION = "v85";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1899,7 +1899,6 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
     return iso(x);
   };
 
-  /* État d'un item pour le cycle de révision en cours uniquement. */
   const etatDe = (id, depuis) => {
     const liees = taches.filter((t) => t.itemId === id && (t.date || "") >= (depuis || ""))
       .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
@@ -1924,120 +1923,143 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
   const planifies = tout.filter((x) => x.etat === "place").sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const semaine = tout.filter((x) => x.etat === "avenir").sort((a, b) => (a.ech || "").localeCompare(b.ech || ""));
   const faits = tout.filter((x) => x.etat === "fait").sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const enRetard = aPlacer.filter((x) => x.retard > 0).length;
 
-  /* Une ligne compacte, identique partout : pastille de niveau, titre, repère. */
-  const Ligne = ({ x, repere, barre, action }) => {
+  const TON = {
+    placer: { fg: "#EAAE43", bg: "#2A1F08" },
+    planifie: { fg: "#7C9BF0", bg: "#141B33" },
+    semaine: { fg: "#8FA6BC", bg: "#161F2B" },
+    fait: { fg: "#35B48C", bg: "#0F241D" },
+  };
+
+  /* Une carte par item : gros numéro coloré, titre lisible, repère temporel. */
+  const Carte = ({ x, ton, repere, urgence, barre, bouton }) => {
     const N = NIVEAUX_C[Math.min(x.i.comp || 0, 4)];
-    const col = colleges.find((c) => c.id === x.i.collegeId);
     return (
-      <div className="flex items-center gap-2.5" style={{ padding: "9px 4px", borderBottom: `1px solid ${T.line}` }}>
-        <span className="shrink-0" style={{ width: 4, height: 30, borderRadius: 999, background: N.bord }} />
-        <button onClick={() => onOuvrirItem(x.i.id)} className="flex-1 min-w-0 text-left">
-          <span className="block text-xs truncate" style={{ fontWeight: 700, color: T.ink,
-            textDecoration: barre ? "line-through" : "none", opacity: barre ? 0.55 : 1 }}>
-            <span style={{ color: N.bord }}>{x.i.numero}</span> · {x.i.titre}
+      <div className="mb-2" style={{ background: ton.bg, borderRadius: 16, padding: "11px 12px",
+        borderLeft: `5px solid ${ton.fg}`, opacity: barre ? 0.5 : 1 }}>
+        <div className="flex items-start gap-2.5">
+          <span className="shrink-0 flex items-center justify-center"
+            style={{ minWidth: 40, height: 34, padding: "0 8px", borderRadius: 10,
+              background: N.bord, color: "#0E1A29", fontWeight: 900, fontSize: 16, letterSpacing: "-0.02em" }}>
+            {x.i.numero}
           </span>
-          <span className="block text-xs mt-0.5 truncate" style={{ color: T.ink2, opacity: barre ? 0.6 : 1 }}>
-            {repere}{col ? ` · ${col.nom}` : ""}
+          <button onClick={() => onOuvrirItem(x.i.id)} className="flex-1 min-w-0 text-left">
+            <span className="block" style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3, color: T.ink,
+              textDecoration: barre ? "line-through" : "none" }}>
+              {x.i.titre}
+            </span>
+            <span className="block mt-1" style={{ fontSize: 12, color: N.bord, fontWeight: 700 }}>
+              {N.nom}
+            </span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 mt-2.5">
+          <span className="px-2.5 py-1" style={{ borderRadius: 999, fontWeight: 800, fontSize: 11.5,
+            background: urgence ? T.bas : ton.fg, color: "#0E1A29" }}>
+            {repere}
           </span>
-        </button>
-        {action}
+          <div className="flex-1" />
+          {bouton}
+        </div>
       </div>
     );
   };
 
-  const Section = ({ cle, titre, n, couleur, enfants, sous }) => {
+  const Section = ({ cle, titre, n, ton, sous, enfants }) => {
     if (!n) return null;
     const ouvert = ouvertes[cle];
     return (
-      <div className="mb-1">
-        <button onClick={() => basculer(cle)} className="w-full flex items-center gap-2.5"
-          style={{ padding: "9px 2px" }}>
-          <span className="shrink-0" style={{ width: 8, height: 8, borderRadius: 999, background: couleur }} />
-          <span className="text-xs" style={{ fontWeight: 800, letterSpacing: "0.03em", color: T.ink }}>{titre}</span>
-          <span className="text-xs px-1.5" style={{ borderRadius: 999, background: couleur,
-            color: "#0E1A29", fontWeight: 800, fontSize: 10.5 }}>{n}</span>
+      <div className="mb-3">
+        <button onClick={() => basculer(cle)} className="w-full flex items-center gap-2.5 mb-2"
+          style={{ background: ouvert ? "transparent" : ton.bg, borderRadius: 12,
+            padding: ouvert ? "2px 0" : "9px 11px" }}>
+          <span className="shrink-0 flex items-center justify-center"
+            style={{ minWidth: 26, height: 24, padding: "0 7px", borderRadius: 8,
+              background: ton.fg, color: "#0E1A29", fontWeight: 900, fontSize: 13 }}>{n}</span>
+          <span style={{ fontSize: 13.5, fontWeight: 800, color: ton.fg, letterSpacing: "0.02em" }}>{titre}</span>
           <div className="flex-1" />
-          <span className="text-xs" style={{ color: T.ink2 }}>{ouvert ? "▾" : "▸"}</span>
+          <span style={{ color: ton.fg, fontSize: 13 }}>{ouvert ? "▾" : "▸"}</span>
         </button>
-        {ouvert && (
-          <div className="vue">
-            {sous}
-            {enfants}
-          </div>
-        )}
+        {ouvert && <div className="vue">{sous}{enfants}</div>}
       </div>
     );
   };
 
-  const vide = !aPlacer.length && !planifies.length && !semaine.length && !faits.length;
+  const vide = !tout.length;
 
   return (
-    <div className="ombre" style={{ background: T.card, borderRadius: 22, padding: "14px 15px" }}>
-      <div className="flex items-baseline justify-between mb-3">
-        <span style={{ fontFamily: serif, fontSize: 16 }}>Mes révisions</span>
-        {aPlacer.length > 0 && (
-          <span className="text-xs px-2 py-0.5" style={{ borderRadius: 999,
-            background: T.moyen, color: "#0E1A29", fontWeight: 800 }}>
-            {aPlacer.length} à placer
-          </span>
-        )}
+    <div className="ombre" style={{ background: T.card, borderRadius: 22, padding: "15px 15px 13px" }}>
+      <div className="mb-3" style={{ background: aPlacer.length ? TON.placer.bg : TON.fait.bg,
+        borderRadius: 16, padding: "13px 14px" }}>
+        <p style={{ fontFamily: serif, fontSize: 26, lineHeight: 1.1,
+          color: aPlacer.length ? TON.placer.fg : TON.fait.fg }}>
+          {aPlacer.length ? `${aPlacer.length} à placer` : "Tout est placé"}
+        </p>
+        <p className="text-xs mt-1" style={{ color: T.ink2, lineHeight: 1.5 }}>
+          {enRetard > 0
+            ? `dont ${enRetard} en retard`
+            : aPlacer.length ? "échu aujourd'hui" : "rien ne traîne, continue comme ça"}
+        </p>
       </div>
 
       {vide ? (
-        <p className="text-xs py-3" style={{ color: T.ink2, lineHeight: 1.6 }}>
+        <p className="text-xs py-2" style={{ color: T.ink2, lineHeight: 1.6 }}>
           Rien à réviser cette semaine. Colore des items dans la grille :
           leur date de révision se calcule toute seule.
         </p>
       ) : (
-        <div style={{ maxHeight: "58vh", overflowY: "auto" }}>
+        <div style={{ maxHeight: "56vh", overflowY: "auto" }}>
 
-          <Section cle="placer" titre="À PLACER" n={aPlacer.length} couleur={T.moyen}
+          <Section cle="placer" titre="À PLACER" n={aPlacer.length} ton={TON.placer}
             sous={aPlacer.length > 1 && (
               <button onClick={() => aPlacer.forEach((x) => onPoser(x.i))}
-                className="w-full py-2 mb-1 doux"
-                style={{ borderRadius: 10, background: T.accent, color: "#fff", fontWeight: 700, fontSize: 12 }}>
+                className="w-full py-2.5 mb-2 doux"
+                style={{ borderRadius: 12, background: TON.placer.fg, color: "#0E1A29",
+                  fontWeight: 800, fontSize: 13 }}>
                 Tout placer aujourd'hui
               </button>
             )}
             enfants={aPlacer.map((x) => (
-              <Ligne key={x.i.id} x={x}
-                repere={x.retard > 0 ? `en retard de ${x.retard} j` : "échu aujourd'hui"}
-                action={
-                  <button onClick={() => onPoser(x.i)} className="shrink-0 text-xs px-3 py-1.5 doux"
-                    style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 700 }}>
+              <Carte key={x.i.id} x={x} ton={TON.placer} urgence={x.retard > 0}
+                repere={x.retard > 0 ? `EN RETARD DE ${x.retard} J` : "ÉCHU AUJOURD'HUI"}
+                bouton={
+                  <button onClick={() => onPoser(x.i)} className="text-xs px-4 py-1.5 doux"
+                    style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 800 }}>
                     Placer
                   </button>
                 } />
             ))} />
 
-          <Section cle="planifie" titre="PLANIFIÉ" n={planifies.length} couleur={T.accent}
+          <Section cle="planifie" titre="PLANIFIÉ" n={planifies.length} ton={TON.planifie}
             enfants={planifies.map((x) => (
-              <Ligne key={x.i.id} x={x}
-                repere={`${x.date === jour ? "aujourd'hui" : dCourte(x.date)}${x.heure !== undefined ? " à " + hFmt(x.heure) : ""}`} />
+              <Carte key={x.i.id} x={x} ton={TON.planifie}
+                repere={`${x.date === jour ? "AUJOURD'HUI" : dCourte(x.date).toUpperCase()}${x.heure !== undefined ? " · " + hFmt(x.heure) : ""}`} />
             ))} />
 
-          <Section cle="semaine" titre="CETTE SEMAINE" n={semaine.length} couleur="#7C9BF0"
+          <Section cle="semaine" titre="CETTE SEMAINE" n={semaine.length} ton={TON.semaine}
             enfants={semaine.map((x) => (
-              <Ligne key={x.i.id} x={x}
-                repere={`${-x.retard === 1 ? "demain" : `dans ${-x.retard} j`} · ${dCourte(x.ech)}`}
-                action={
-                  <button onClick={() => onPoser(x.i, x.ech)} className="shrink-0 text-xs px-2.5 py-1.5 doux"
-                    style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2, fontWeight: 600 }}>
+              <Carte key={x.i.id} x={x} ton={TON.semaine}
+                repere={`${-x.retard === 1 ? "DEMAIN" : `DANS ${-x.retard} J`} · ${dCourte(x.ech).toUpperCase()}`}
+                bouton={
+                  <button onClick={() => onPoser(x.i, x.ech)} className="text-xs px-3 py-1.5 doux"
+                    style={{ borderRadius: 999, border: `1px solid ${TON.semaine.fg}`,
+                      color: TON.semaine.fg, fontWeight: 700 }}>
                     Placer
                   </button>
                 } />
             ))} />
 
-          <Section cle="fait" titre="RÉVISÉ" n={faits.length} couleur={T.haut}
+          <Section cle="fait" titre="RÉVISÉ" n={faits.length} ton={TON.fait}
             enfants={faits.map((x) => (
-              <Ligne key={x.i.id} x={x} barre
-                repere={x.date === jour ? "aujourd'hui" : `le ${dCourte(x.date)}`} />
+              <Carte key={x.i.id} x={x} ton={TON.fait} barre
+                repere={`✓ ${x.date === jour ? "AUJOURD'HUI" : dCourte(x.date).toUpperCase()}`} />
             ))} />
         </div>
       )}
 
-      <button onClick={() => onAuto(!auto)} className="flex items-center gap-2 mt-3 w-full text-left">
+      <button onClick={() => onAuto(!auto)} className="flex items-center gap-2 mt-2 w-full text-left">
         <span className="shrink-0 doux" style={{ width: 32, height: 19, borderRadius: 999,
           background: auto ? T.accent : "#24384F", position: "relative" }}>
           <span className="doux" style={{ position: "absolute", top: 2, left: auto ? 15 : 2,
@@ -2084,7 +2106,6 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
   }, [auto, jour, items, taches]);
   const [export_, setExport_] = useState(false);
   const [modeles, setModeles] = useState(false);
-  const [purge, setPurge] = useState(false);
   const [effacer_, setEffacer] = useState(false);
   const [corbeille, setCorbeille] = useState([]);
   const [glisse, setGlisse] = useState(null);
@@ -2363,44 +2384,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
         </div>
       )}
 
-      {purge && (
-        <div className="ombre mb-3 vue" style={{ background: T.card, borderRadius: 20, padding: "14px 16px", border: `1px solid ${T.bas}` }}>
-          <p className="text-xs mb-3" style={{ color: T.ink2, lineHeight: 1.7 }}>
-            Efface des créneaux du planning. Un bouton de rétablissement apparaît juste après.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {[["Cette journée", (t) => t.date === jour],
-              ["Cette semaine", (t) => t.date >= iso(debutSem) && t.date <= iso(new Date(debutSem.getTime() + 6 * 86400000))],
-              ["Tout le passé", (t) => t.date < auj()],
-              ["Tout", () => true]].map(([l, f]) => {
-              const lot = taches.filter(f);
-              return (
-                <button key={l} disabled={!lot.length}
-                  onClick={() => { setCorbeille(lot); onMaj(taches.filter((t) => !lot.includes(t))); setPurge(false); }}
-                  className="px-4 py-2.5 text-xs doux"
-                  style={{ borderRadius: 999, fontWeight: 600,
-                    background: lot.length ? NIV[1].doux : "transparent",
-                    color: lot.length ? NIV[1].encre : "#3E5C7C",
-                    border: `1px solid ${lot.length ? "transparent" : T.line}` }}>
-                  {l} <span style={{ opacity: 0.75 }}>{lot.length}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
-      {(corbeille || []).length > 0 && (
-        <div className="flex items-center gap-3 mb-3 px-4 py-2.5 vue" style={{ background: T.accent, borderRadius: 14 }}>
-          <span className="text-xs flex-1" style={{ color: "#fff", fontWeight: 600 }}>
-            {(corbeille || []).length} créneau(x) effacé(s)
-          </span>
-          <button onClick={() => { onMaj([...taches, ...(corbeille || [])]); setCorbeille([]); }}
-            className="text-xs px-3 py-1 doux"
-            style={{ background: "rgba(255,255,255,0.24)", color: "#fff", borderRadius: 999, fontWeight: 700 }}>Rétablir</button>
-          <button onClick={() => setCorbeille([])} className="text-xs" style={{ color: "#fff" }}>✕</button>
-        </div>
-      )}
 
       {modeles && (
         <div className="ombre mb-3 vue" style={{ background: T.card, borderRadius: 20, padding: "14px 16px" }}>
@@ -2865,7 +2849,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
         Remplir les 5 prochains jours avec mes items les plus faibles
       </button>
 
-      <button onClick={() => setPurge(!purge)} className="w-full py-3 mt-2 doux"
+      <button onClick={() => setEffacer(!effacer_)} className="w-full py-3 mt-2 doux"
         style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.bas, fontWeight: 600, fontSize: 13 }}>
         Effacer des créneaux…
       </button>
