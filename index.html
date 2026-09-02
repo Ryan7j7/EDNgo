@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v85";
+const VERSION = "v86";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1884,8 +1884,8 @@ function revisionsDuJour(items, jour, horizon) {
   return due.sort((a, b) => b.retard - a.retard || (a.i.comp || 0) - (b.i.comp || 0));
 }
 
-function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem, auto, onAuto }) {
-  const [ouvertes, setOuvertes] = useState({ placer: true, planifie: true, semaine: false, fait: false });
+function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem, auto, onAuto, repousses = {}, onReporter }) {
+  const [ouvertes, setOuvertes] = useState({ placer: true, planifie: true, semaine: false, reporte: false, fait: false });
   const basculer = (k) => setOuvertes((o) => ({ ...o, [k]: !o[k] }));
 
   const due = revisionsDuJour(items, jour, 7);
@@ -1919,26 +1919,43 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
     .filter((x) => !(x.etat === "fait" && x.date && jours(x.date, jour) > 3))
     .map((x) => (x.avenir && x.etat === "libre" ? { ...x, etat: "avenir" } : x));
 
-  const aPlacer = tout.filter((x) => x.etat === "libre").sort((a, b) => b.retard - a.retard);
+  const reportes = tout.filter((x) => x.etat === "libre" && (repousses[x.i.id] || "") > jour);
+  const aPlacer = tout.filter((x) => x.etat === "libre" && !((repousses[x.i.id] || "") > jour))
+    .sort((a, b) => b.retard - a.retard);
   const planifies = tout.filter((x) => x.etat === "place").sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const semaine = tout.filter((x) => x.etat === "avenir").sort((a, b) => (a.ech || "").localeCompare(b.ech || ""));
   const faits = tout.filter((x) => x.etat === "fait").sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const enRetard = aPlacer.filter((x) => x.retard > 0).length;
+
+  /* Reporter ne supprime rien : l'item revient dans « à placer » le lendemain,
+     et reste visible entre-temps dans sa propre section. */
+  const reporter = (id) => {
+    const d = new Date(jour + "T12:00:00");
+    d.setDate(d.getDate() + 1);
+    onReporter(id, iso(d));
+  };
 
   const TON = {
     placer: { fg: "#EAAE43", bg: "#2A1F08" },
     planifie: { fg: "#7C9BF0", bg: "#141B33" },
     semaine: { fg: "#8FA6BC", bg: "#161F2B" },
     fait: { fg: "#35B48C", bg: "#0F241D" },
+    reporte: { fg: "#B48CC9", bg: "#1E1428" },
   };
 
   /* Une carte par item : gros numéro coloré, titre lisible, repère temporel. */
-  const Carte = ({ x, ton, repere, urgence, barre, bouton }) => {
+  const Carte = ({ x, ton, repere, urgence, barre, bouton, onReporter }) => {
     const N = NIVEAUX_C[Math.min(x.i.comp || 0, 4)];
     return (
       <div className="mb-2" style={{ background: ton.bg, borderRadius: 16, padding: "11px 12px",
-        borderLeft: `5px solid ${ton.fg}`, opacity: barre ? 0.5 : 1 }}>
-        <div className="flex items-start gap-2.5">
+        borderLeft: `5px solid ${ton.fg}`, opacity: barre ? 0.5 : 1, position: "relative" }}>
+        {onReporter && (
+          <button onClick={onReporter} title="Pas aujourd'hui"
+            className="doux flex items-center justify-center"
+            style={{ position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: 999,
+              color: T.ink2, fontSize: 13, background: "rgba(0,0,0,0.22)" }}>✕</button>
+        )}
+        <div className="flex items-start gap-2.5" style={{ paddingRight: onReporter ? 24 : 0 }}>
           <span className="shrink-0 flex items-center justify-center"
             style={{ minWidth: 40, height: 34, padding: "0 8px", borderRadius: 10,
               background: N.bord, color: "#0E1A29", fontWeight: 900, fontSize: 16, letterSpacing: "-0.02em" }}>
@@ -2024,6 +2041,7 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
             enfants={aPlacer.map((x) => (
               <Carte key={x.i.id} x={x} ton={TON.placer} urgence={x.retard > 0}
                 repere={x.retard > 0 ? `EN RETARD DE ${x.retard} J` : "ÉCHU AUJOURD'HUI"}
+                onReporter={() => reporter(x.i.id)}
                 bouton={
                   <button onClick={() => onPoser(x.i)} className="text-xs px-4 py-1.5 doux"
                     style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 800 }}>
@@ -2051,6 +2069,19 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
                 } />
             ))} />
 
+          <Section cle="reporte" titre="PAS AUJOURD'HUI" n={reportes.length} ton={TON.reporte}
+            enfants={reportes.map((x) => (
+              <Carte key={x.i.id} x={x} ton={TON.reporte}
+                repere={x.retard > 0 ? `EN ATTENTE · ${x.retard} J DE RETARD` : "EN ATTENTE"}
+                bouton={
+                  <button onClick={() => onReporter(x.i.id, null)} className="text-xs px-3 py-1.5 doux"
+                    style={{ borderRadius: 999, border: `1px solid ${TON.reporte.fg}`,
+                      color: TON.reporte.fg, fontWeight: 700 }}>
+                    Remettre
+                  </button>
+                } />
+            ))} />
+
           <Section cle="fait" titre="RÉVISÉ" n={faits.length} ton={TON.fait}
             enfants={faits.map((x) => (
               <Carte key={x.i.id} x={x} ton={TON.fait} barre
@@ -2072,7 +2103,7 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
     </div>
   );
 }
-function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, onNote, notesJour = {}, onNoteJour }) {
+function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, onNote, notesJour = {}, onNoteJour, repousses = {}, onReporter }) {
   const [debutSem, setDebutSem] = useState(() => lundiDe(new Date()));
   const [jour, setJour] = useState(() => iso(new Date()));
   const [creneau, setCreneau] = useState(null);
@@ -2822,7 +2853,8 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
 
         <ColonneRevisions items={items} colleges={colleges} jour={jour} taches={taches}
           onOuvrirItem={onOuvrirItem} onPoser={placerRevision}
-          auto={auto} onAuto={setAuto} />
+          auto={auto} onAuto={setAuto}
+          repousses={repousses} onReporter={onReporter} />
       </div>
       </div>
 
@@ -2977,9 +3009,10 @@ function Citation() {
 }
 
 /* la journée, telle qu'elle apparaît sur l'accueil */
-function JourneeAccueil({ taches, onMaj, items, colleges, onOuvrirItem, onPlanning }) {
+function JourneeAccueil({ taches, onMaj, items, colleges, onOuvrirItem, onPlanning, onComprendre, onNote }) {
   const auj_ = iso(new Date());
   const [jourVu, setJourVu] = useState(auj_);
+  const [noter, setNoter] = useState(null);
 
   /* Les sept prochains jours, pour voir la suite sans quitter l'accueil. */
   const semaine = [...Array(7)].map((_, k) => {
@@ -3086,7 +3119,12 @@ function JourneeAccueil({ taches, onMaj, items, colleges, onOuvrirItem, onPlanni
                   opacity: t.fait ? 0.42 : 1,
                   outline: actif ? `2px solid ${b.bar}` : "none",
                 }}>
-                <button onClick={() => onMaj(taches.map((x) => x.id === t.id ? { ...normaliser(x), fait: !x.fait } : x))}
+                <button onClick={() => {
+                    const coche = !t.fait;
+                    onMaj(taches.map((x) => x.id === t.id ? { ...normaliser(x), fait: coche } : x));
+                    /* Comme dans le planning : cocher un cours ouvre la notation. */
+                    if (coche && i) setNoter(t.id);
+                  }}
                   className="shrink-0 flex items-center justify-center" style={{ width: 52 }}>
                   <span className="flex items-center justify-center"
                     style={{ width: 26, height: 26, borderRadius: 999,
@@ -3126,11 +3164,65 @@ function JourneeAccueil({ taches, onMaj, items, colleges, onOuvrirItem, onPlanni
 
           {suivante && !enCours && (
             <p className="text-xs mt-3 px-1" style={{ color: T.ink2 }}>
-              Prochain créneau à {String(suivante.debut).padStart(2, "0")}:00.
+              Prochain créneau à {hFmt(suivante.debut)}.
             </p>
           )}
         </>
       )}
+
+      {/* Notation à chaud, identique à celle du planning. */}
+      {(() => {
+        const tache = taches.find((t) => t.id === noter);
+        const item = tache && items.find((x) => x.id === tache.itemId);
+        if (!tache || !item) return null;
+        const col = colleges.find((x) => x.id === item.collegeId);
+        return (
+          <div className="ombre vue mt-3" style={{ background: T.card, borderRadius: 22, padding: "16px 18px" }}>
+            <div className="flex items-start gap-3 mb-3">
+              <span className="flex-1 min-w-0">
+                <span className="block text-xs uppercase" style={{ letterSpacing: "0.1em", color: T.ink2 }}>
+                  Cours terminé
+                </span>
+                <span className="block text-sm mt-0.5" style={{ fontWeight: 600, lineHeight: 1.4 }}>
+                  {item.numero}. {item.titre}
+                </span>
+                {col && <span className="block text-xs mt-0.5" style={{ color: pal(col.nom).fg }}>{col.nom}</span>}
+              </span>
+              <button onClick={() => setNoter(null)} className="text-sm px-2 shrink-0" style={{ color: T.ink2 }}>✕</button>
+            </div>
+
+            <p className="text-xs mb-2" style={{ color: T.ink2 }}>Comment l'as-tu compris ?</p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {[1, 2, 3, 4].map((k) => {
+                const N = NIVEAUX_C[k];
+                const actif = (item.comp || 0) === k;
+                return (
+                  <button key={k} onClick={() => onComprendre && onComprendre(item.id, k)}
+                    className="doux flex-1 py-2.5 px-2" style={{ minWidth: 92, borderRadius: 14,
+                      background: actif ? N.bord : N.bg, color: actif ? "#0E1A29" : N.fg,
+                      fontWeight: 700, fontSize: 12, border: `1px solid ${actif ? N.bord : "transparent"}` }}>
+                    {N.nom}
+                    <span className="block" style={{ fontSize: 10, fontWeight: 500, opacity: 0.85 }}>
+                      revoir à J{N.jours}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-xs mb-1.5" style={{ color: T.ink2 }}>Ce qu'il faut retenir</p>
+            <textarea value={item.note || ""} onChange={(e) => onNote && onNote(item.id, e.target.value)}
+              rows={3} placeholder="Points clés, pièges, ce qui t'a bloqué…"
+              className="w-full p-3 text-sm" style={{ borderRadius: 14, border: `1px solid ${T.line}`,
+                background: T.paper, lineHeight: 1.6 }} />
+
+            <button onClick={() => setNoter(null)} className="w-full py-2.5 mt-3 doux"
+              style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 700, fontSize: 13 }}>
+              Terminé
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -4511,6 +4603,7 @@ function App() {
   const [dossiers, setDossiers] = useState([]);
   const [seances, setSeances] = useState([]);
   const [notesJour, setNotesJour] = useState({});
+  const [repousses, setRepousses] = useState({});
   const [echec, setEchec] = useState(false);
   const [poids, setPoids] = useState(0);
   const [place, setPlace] = useState(null);
@@ -4549,6 +4642,7 @@ function App() {
         setDossiers(d.dossiers || []);
         setSeances(d.seances || []);
         setNotesJour(d.notesJour || {});
+        setRepousses(d.repousses || {});
       } catch {
         try { /* reprise de l'ancienne version */
           const v = JSON.parse((await window.storage.get(KEY_ANCIEN)).value);
@@ -4650,7 +4744,7 @@ function App() {
       try { await poserLourd("fiches", fiches); } catch (e) { fichesOk = false; }
 
       const donnees = JSON.stringify({ colleges, items, cartes, qcms, annales, resultats,
-        erreurs, cours, taches, dossiers, seances, notesJour, fiches: [] });
+        erreurs, cours, taches, dossiers, seances, notesJour, repousses, fiches: [] });
       setPoids(donnees.length);
       try {
         await window.storage.set(KEY, donnees);
@@ -4666,7 +4760,7 @@ function App() {
       }
     }, 500);
     return () => clearTimeout(t);
-  }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances, notesJour, pret]);
+  }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances, notesJour, repousses, pret]);
 
   /* mesure du temps passé entre deux réponses, plafonné pour ignorer les pauses */
   const horlogeRep = useRef(Date.now());
@@ -4795,7 +4889,7 @@ function App() {
 
   const exporter = () => {
     const b = new Blob([JSON.stringify({ colleges, items, cartes, qcms, annales, resultats,
-      erreurs, cours, fiches, taches, dossiers, seances, notesJour }, null, 2)], { type: "application/json" });
+      erreurs, cours, fiches, taches, dossiers, seances, notesJour, repousses }, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b); a.download = `edn-go-${VERSION}-${auj()}.json`; a.click();
     URL.revokeObjectURL(a.href);
@@ -4819,6 +4913,7 @@ function App() {
           if (d.dossiers) setDossiers(d.dossiers);
           if (d.seances) setSeances(d.seances);
           if (d.notesJour) setNotesJour(d.notesJour);
+          if (d.repousses) setRepousses(d.repousses);
           setAlerte(`Sauvegarde restaurée : ${(d.items || []).length} items, ${(d.qcms || []).length} QCM, `
             + `${(d.cartes || []).length} flashcards, ${(d.fiches || []).length} fiche(s). Les PDF ne sont pas dans l'export.`);
           return;
@@ -5087,6 +5182,12 @@ function App() {
             onComprendre={(id, v) => definirComp(id, v)}
             notesJour={notesJour}
             onNoteJour={(j, v) => setNotesJour((n) => ({ ...n, [j]: v }))}
+            repousses={repousses}
+            onReporter={(id, d) => setRepousses((r) => {
+              const c = { ...r };
+              if (d) c[id] = d; else delete c[id];
+              return c;
+            })}
             onNote={(id, v) => setItems((l) => l.map((i) => i.id === id ? { ...i, note: v } : i))}
             onOuvrirItem={(id) => { const it = items.find((x) => x.id === id); setVue("colleges"); setCollegeId(it.collegeId); setItemId(id); }} />
         ) : vue === "exercice" ? (
@@ -5118,6 +5219,8 @@ function App() {
         ) : (
           <Accueil items={items} colleges={colleges} cartes={cartes} qcms={qcms}
             taches={taches} onTaches={majTaches} onPlanning={() => setVue("todo")}
+            onComprendre={(id, v) => definirComp(id, v)}
+            onNoteItem={(id, txt) => setItems((l) => l.map((i) => i.id === id ? { ...i, note: txt } : i))}
             onOuvrirItem={(id) => { const it = items.find((x) => x.id === id); setVue("colleges"); setCollegeId(it.collegeId); setItemId(id); }}
             testes={testes} solides={solides} jours={resultats7}
             nbExos={cartes.length + qcms.length} nbAnnales={annales.length}
@@ -5267,7 +5370,8 @@ function Selecteur({ items, colleges, cartes, qcms, onLancer, onFermer }) {
 
 function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, onOuvrirItem,
   testes, solides, jours, nbExos, nbAnnales, onSession, onSessionCollege, revision, onRevision,
-  rattrapage, onRattrapage, onGrille, onExporter, onImporter, onLancerPaquet, place, poidsAffiche }) {
+  rattrapage, onRattrapage, onGrille, onExporter, onImporter, onLancerPaquet, place, poidsAffiche,
+  onComprendre, onNoteItem }) {
   const [lca, setLca] = useState(false);
   useEffect(() => { setLca(lcaDu()); }, []);
   const onLca = () => { noterLca(); setLca(false); };
@@ -5300,7 +5404,8 @@ function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, 
   return (
     <div>
       <JourneeAccueil taches={taches} onMaj={onTaches} items={items} colleges={colleges}
-        onOuvrirItem={onOuvrirItem} onPlanning={onPlanning} />
+        onOuvrirItem={onOuvrirItem} onPlanning={onPlanning}
+        onComprendre={onComprendre} onNote={onNoteItem} />
 
       {/* barre de progression, unique et reactive */}
       <div className="p-5 mb-4 ombre" style={{ background: T.card, borderRadius: 24 }}>
