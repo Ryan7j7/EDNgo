@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v89";
+const VERSION = "v90";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -916,6 +916,109 @@ function Figure({ nom, legende }) {
 
 /* ================== cours transversaux ================== */
 const COURS_INIT = [
+  {
+    id: "lca",
+    titre: "Lire un article scientifique",
+    famille: "Méthode",
+    contenu: `## Comment travailler cette épreuve
+La LCA ne s'apprend pas, elle se pratique. Mais elle repose sur un socle si étroit qu'on peut le fixer en deux semaines, puis l'entretenir presque sans effort.
+
+Étape 1 — fixer le socle, en deux semaines. Relis ce cours trois fois. Tu dois savoir sans réfléchir cinq choses seulement :
+- ce qui distingue une cohorte d'une étude cas-témoins, et pourquoi l'odds ratio existe
+- ce que dit et ne dit pas un p
+- les trois familles de biais : sélection, classement, confusion
+- la différence entre réduction relative et réduction absolue du risque
+- pourquoi les valeurs prédictives dépendent de la prévalence, et pas la sensibilité
+
+Étape 2 — un article par semaine, pas plus. C'est le rythme qui tient sur deux ans. Vingt minutes suffisent : lis le résumé, saute aux méthodes, puis applique les sept questions de la dernière section, par écrit. Écrire compte : répondre dans sa tête donne l'illusion d'avoir compris.
+
+Étape 3 — noter ce que tu n'as pas repéré, dans l'onglet Erreurs. Au bout d'une dizaine d'articles, un motif apparaîtra : presque tout le monde rate toujours le même type de biais.
+
+Étape 4 — une fois le socle acquis, ne relis pas les définitions. Travaille la section sur les signaux de méfiance : c'est ce qui distingue une bonne copie.
+
+Ce qu'il ne faut pas faire : reporter la LCA à la dernière année. C'est une compétence, pas une connaissance.
+
+## La structure d'un article
+Un article original suit toujours le plan IMRaD : introduction, méthodes, résultats, discussion.
+
+Réflexe : lire le résumé, puis sauter directement aux méthodes. Une conclusion séduisante repose souvent sur des méthodes fragiles ; l'inverse est plus rare.
+
+## Les types d'études, du plus faible au plus fort
+- Série de cas : descriptive, aucune comparaison, niveau de preuve très faible
+- Étude cas-témoins : rétrospective, part de la maladie et remonte à l'exposition. Utile pour les maladies rares. Permet un odds ratio, pas un risque relatif
+- Étude de cohorte : suit dans le temps exposés et non-exposés. Permet un risque relatif et une incidence
+- Essai contrôlé randomisé : le seul dispositif permettant d'affirmer une causalité, la randomisation équilibrant les facteurs de confusion, y compris ceux qu'on ignore
+- Méta-analyse d'essais randomisés : au sommet, à condition que les essais inclus soient de bonne qualité
+
+Un essai randomisé mal conduit vaut moins qu'une grande cohorte rigoureuse.
+
+## Ce qu'il faut vérifier dans les méthodes
+- La question est-elle posée avant l'étude ? Chercher le critère de jugement principal, unique et défini à l'avance
+- La population est-elle décrite ? Critères d'inclusion et d'exclusion, lieu, période
+- L'attribution est-elle randomisée, et la liste dissimulée avant l'inclusion ?
+- Y a-t-il un aveugle, ou au moins une évaluation en aveugle du critère de jugement ?
+- Le nombre de sujets nécessaire a-t-il été calculé avant l'étude ?
+- L'analyse est-elle en intention de traiter, chaque patient étant analysé dans le groupe où il a été tiré au sort ?
+
+## Les mesures d'association
+- Risque relatif : rapport des risques entre exposés et non-exposés. Calculable dans une cohorte ou un essai
+- Odds ratio : rapport des cotes. Seule mesure possible dans une étude cas-témoins. Il approche le risque relatif quand la maladie est rare
+- Réduction absolue du risque : la vraie information clinique
+- Nombre de sujets à traiter : inverse de la réduction absolue
+
+Piège majeur : une réduction relative de 50 % peut correspondre à une réduction absolue de 0,2 %.
+
+## Le p et l'intervalle de confiance
+Le p répond à une seule question : quelle est la probabilité d'observer un écart au moins aussi grand s'il n'y avait aucune différence. Il ne dit rien de l'ampleur de l'effet ni de son intérêt clinique.
+
+L'intervalle de confiance à 95 % est bien plus informatif : il donne la fourchette des valeurs compatibles avec les données.
+- Pour un risque relatif ou un odds ratio, il est significatif s'il ne contient pas 1
+- Pour une différence de moyennes, s'il ne contient pas 0
+- Un intervalle large traduit une imprécision, souvent liée à un petit effectif
+
+## Les biais, cœur de l'épreuve
+Un biais est une erreur systématique, que l'augmentation de l'effectif ne corrige pas. C'est ce qui le distingue du hasard.
+
+Biais de sélection : les groupes diffèrent dès le départ. Perdus de vue non aléatoires, volontaires en meilleure santé, recrutement hospitalier non représentatif.
+
+Biais de classement : l'exposition ou la maladie est mal mesurée. Le biais de mémorisation en est la forme typique dans les études cas-témoins. L'aveugle et les mesures objectives le limitent.
+
+Facteur de confusion : une troisième variable liée à la fois à l'exposition et à la maladie. L'alcool semble associé au cancer du poumon, mais les buveurs fument davantage. Il se contrôle par la randomisation, l'appariement, la stratification ou l'analyse multivariée.
+
+Un facteur de confusion n'est pas un biais de sélection : la nuance tombe souvent.
+
+## Ce qui doit éveiller la méfiance
+- Un critère composite mêlant des événements de gravité très inégale
+- Un critère de substitution à la place d'un critère clinique
+- Des analyses en sous-groupes non prévues à l'avance
+- Un changement de critère principal en cours d'étude
+- Une conclusion qui dépasse les résultats
+- Des conflits d'intérêts non déclarés
+- Une puissance insuffisante : une absence de différence n'est pas une preuve d'équivalence
+
+## Sensibilité, spécificité, valeurs prédictives
+- Sensibilité : proportion de malades détectés. Un test très sensible, négatif, écarte la maladie
+- Spécificité : proportion de non-malades correctement classés. Un test très spécifique, positif, confirme
+- Valeurs prédictives : elles dépendent de la prévalence, contrairement aux deux premières
+
+Conséquence : un excellent test appliqué là où la maladie est rare produit surtout des faux positifs.
+
+## Équivalence et non-infériorité
+Elles ne cherchent pas une supériorité mais à établir qu'un traitement n'est pas moins bon, à une marge près définie à l'avance. L'analyse en intention de traiter y est moins protectrice, et la marge doit être justifiée cliniquement.
+
+## La méthode d'analyse en épreuve
+- Quel est le type d'étude, et quel niveau de preuve permet-il ?
+- Quelle est la question, et le critère principal est-il unique et pertinent ?
+- La population est-elle décrite, et à qui les résultats sont-ils extrapolables ?
+- Les groupes sont-ils comparables à l'inclusion ?
+- Quels biais menacent cette étude, et comment ont-ils été limités ?
+- Les résultats sont-ils significatifs, et surtout cliniquement pertinents ?
+- La conclusion est-elle justifiée par les résultats ?
+
+## Pièges d'annales
+Confondre association et causalité reste la faute la plus fréquente. Une différence non significative ne prouve pas l'absence d'effet. Une réduction relative impressionnante n'a de sens qu'avec la réduction absolue. Les valeurs prédictives ne se transposent pas d'une population à l'autre.`,
+  },
+
   {
     id: "echo-gyneco",
     titre: "Échographie et IRM à savoir",
