@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v88";
+const VERSION = "v89";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -1271,6 +1271,14 @@ Je ne peux pas intégrer ici des clichés réels, qui sont protégés par le dro
 Un cliché couché ne permet jamais d'affirmer une cardiomégalie. Une ligne bordante concave vers le haut signe l'épanchement, pas la pneumopathie. Devant un pneumothorax, chercher immédiatement les signes de compression.`,
   },
 ];
+
+/* Les chapitres fournis avec l'application s'ajoutent à ceux déjà enregistrés :
+   sans cela, un nouveau cours n'apparaîtrait jamais chez qui a déjà des données. */
+function fusionCours(enregistres) {
+  const vus = new Set((enregistres || []).map((c) => c.id));
+  const manquants = COURS_INIT.filter((c) => !vus.has(c.id));
+  return manquants.length ? [...(enregistres || []), ...manquants] : (enregistres || []);
+}
 
 function Cours({ cours, onMaj }) {
   const [ouvert, setOuvert] = useState(null);
@@ -4985,7 +4993,7 @@ function App() {
         setCartes(d.cartes || []); setQcms(d.qcms || []);
         setAnnales(d.annales || []); setResultats(d.resultats || []);
         setErreurs(d.erreurs || []);
-        if (d.cours?.length) setCours(d.cours);
+        if (d.cours?.length) setCours(fusionCours(d.cours));
         /* les fiches sont désormais dans la grande réserve ; on reprend celles
            restées dans l'ancien emplacement, puis on les y déplace */
         let f = [];
@@ -5262,7 +5270,7 @@ function App() {
           setCartes(d.cartes || []); setQcms(d.qcms || []);
           setAnnales(d.annales || []); setResultats(d.resultats || []);
           setErreurs(d.erreurs || []);
-          if (d.cours?.length) setCours(d.cours);
+          if (d.cours?.length) setCours(fusionCours(d.cours));
           if (d.fiches) setFiches(d.fiches);
           if (d.taches) setTaches(d.taches);
           if (d.dossiers) setDossiers(d.dossiers);
