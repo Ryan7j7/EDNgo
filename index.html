@@ -9,7 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%230E1A29'/><circle cx='11' cy='11' r='3.6' fill='%2354A9EA'/><circle cx='21' cy='11' r='3.6' fill='%23EAAE43'/><circle cx='11' cy='21' r='3.6' fill='%23E4685D'/><circle cx='21' cy='21' r='3.6' fill='%2335B48C'/></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Caveat:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Caveat:wght@500;600;700&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v91";
+const VERSION = "v92";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -5468,6 +5468,8 @@ function App() {
            translate et scale créent un contexte qui fausse les coordonnées
            du toucher pour les blocs déplaçables du planning. */
         @keyframes onglet { from { opacity: 0.35; } to { opacity: 1; } }
+        @keyframes feuilletD { from { transform: rotateY(-14deg); opacity: 0.5; } to { transform: none; opacity: 1; } }
+        @keyframes feuilletG { from { transform: rotateY(14deg); opacity: 0.5; } to { transform: none; opacity: 1; } }
         .onglet { animation: onglet 200ms ease-out; }
         /* Retour tactile limité aux cases de la grille, qui ne se glissent pas. */
         .case { transition: background 180ms ease, border-color 180ms ease; }
@@ -8004,83 +8006,181 @@ function itemsProbables(texte, items, colleges) {
   return notes.slice(0, 4).map((x) => x.i);
 }
 
-/* Rendu « cahier » : page crème, réglure, marge rouge, écriture manuscrite.
-   L'objectif est de relire ses erreurs comme on relit un cahier, pas un écran. */
-function PageCahier({ titre, sousTitre, entrees, items, colleges, onOuvrir }) {
-  const PAPIER = "#FBF7EC";
-  const LIGNE = "#C8D6E8";
-  const MARGE = "#D96A5E";
-  const ENCRE = "#1B3A6B";
-  const PLUME = "'Caveat', 'Segoe Script', cursive";
+/* Carnet à deux pages : on tourne les feuillets latéralement, on ne défile pas.
+   Écriture large et contrastée : la lisibilité prime sur l'effet. */
+function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colDe }) {
+  const [feuillet, setFeuillet] = useState(0);
+  const [sens, setSens] = useState(0);
+  const large = typeof window !== "undefined" && window.innerWidth >= 900;
 
-  return (
-    <div className="vue" style={{
-      background: PAPIER, borderRadius: 6, padding: "26px 20px 30px 46px", marginBottom: 16,
-      position: "relative", overflow: "hidden",
-      backgroundImage: `repeating-linear-gradient(to bottom, transparent, transparent 27px, ${LIGNE}55 27px, ${LIGNE}55 28px)`,
-      backgroundPosition: "0 34px",
-      boxShadow: "0 10px 26px rgba(0,0,0,0.36), inset -14px 0 22px -18px rgba(0,0,0,0.22)",
+  const PAPIER = "#FCF8EF";
+  const LIGNE = "#B9CCE4";
+  const MARGE = "#D8524A";
+  const ENCRE = "#16386E";
+  const PLUME = "'Kalam', 'Caveat', cursive";
+
+  /* Une entrée = un bloc. On répartit les blocs en pages de hauteur mesurée. */
+  const blocs = [];
+  cles.forEach((cle) => {
+    const prem = paquets[cle][0];
+    const itG = groupe === "item" ? itemDe(prem) : null;
+    const colG = groupe === "college" && cle !== "Sans rattachement"
+      ? cle : (colDe(prem) || {}).nom;
+    blocs.push({ type: "titre", cle, titre: itG ? `${itG.numero}. ${itG.titre}` : cle, col: colG });
+    paquets[cle].forEach((e) => blocs.push({ type: "entree", e, cle }));
+  });
+
+  /* découpage en pages : on compte des lignes approximatives */
+  const LIGNES_PAGE = 15;
+  const pages = [];
+  let page = [], compte = 0;
+  blocs.forEach((b) => {
+    const poids = b.type === "titre" ? 2
+      : 1 + Math.ceil((b.e.qcm ? b.e.qcm.enonce : b.e.texte).length / 42)
+        + (b.e.qcm ? (b.e.qcm.props || []).length + (b.e.qcm.explication ? 2 : 0) : 0);
+    if (compte + poids > LIGNES_PAGE && page.length) { pages.push(page); page = []; compte = 0; }
+    page.push(b); compte += poids;
+  });
+  if (page.length) pages.push(page);
+  if (!pages.length) pages.push([]);
+
+  const parVue = large ? 2 : 1;
+  const nbVues = Math.max(1, Math.ceil(pages.length / parVue));
+  const vue = Math.min(feuillet, nbVues - 1);
+  const visibles = pages.slice(vue * parVue, vue * parVue + parVue);
+
+  const tourner = (d) => {
+    const n = Math.max(0, Math.min(nbVues - 1, vue + d));
+    if (n === vue) return;
+    setSens(d); setFeuillet(n);
+  };
+
+  /* geste horizontal */
+  const depart = useRef(null);
+  const debut = (e) => { depart.current = e.touches ? e.touches[0].clientX : e.clientX; };
+  const fin = (e) => {
+    if (depart.current === null) return;
+    const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+    const d = depart.current - x;
+    depart.current = null;
+    if (Math.abs(d) > 45) tourner(d > 0 ? 1 : -1);
+  };
+
+  const Page = ({ contenu, cote }) => (
+    <div style={{
+      flex: 1, minWidth: 0, background: PAPIER,
+      padding: cote === "g" ? "26px 20px 30px 44px" : "26px 40px 30px 26px",
+      borderRadius: cote === "g" ? "8px 2px 2px 8px" : cote === "d" ? "2px 8px 8px 2px" : 8,
+      backgroundImage: `repeating-linear-gradient(to bottom, transparent, transparent 33px, ${LIGNE}66 33px, ${LIGNE}66 34px)`,
+      backgroundPosition: "0 40px",
+      position: "relative", minHeight: 430,
+      boxShadow: cote === "g" ? "inset -18px 0 24px -20px rgba(0,0,0,0.3)"
+        : cote === "d" ? "inset 18px 0 24px -20px rgba(0,0,0,0.3)" : "none",
     }}>
-      {/* marge rouge et perforations */}
-      <span style={{ position: "absolute", top: 0, bottom: 0, left: 34, width: 1.4, background: MARGE, opacity: 0.75 }} />
-      {[0.16, 0.5, 0.84].map((p, k) => (
-        <span key={k} style={{ position: "absolute", left: 12, top: `${p * 100}%`,
-          width: 11, height: 11, borderRadius: 999, background: "#E8E2D4",
-          boxShadow: "inset 0 1px 2px rgba(0,0,0,0.22)" }} />
-      ))}
-
-      <h3 style={{ fontFamily: PLUME, fontSize: 30, color: ENCRE, lineHeight: 1.1,
-        display: "inline-block", borderBottom: `2.5px solid ${MARGE}`, paddingBottom: 2 }}>
-        {titre}
-      </h3>
-      {sousTitre && (
-        <p style={{ fontFamily: PLUME, fontSize: 17, color: "#6B7A8C", marginTop: 6 }}>{sousTitre}</p>
+      {cote !== "d" && (
+        <>
+          <span style={{ position: "absolute", top: 0, bottom: 0, left: 32, width: 1.6, background: MARGE, opacity: 0.7 }} />
+          {[0.2, 0.5, 0.8].map((p, k) => (
+            <span key={k} style={{ position: "absolute", left: 11, top: `${p * 100}%`, width: 10, height: 10,
+              borderRadius: 999, background: "#E9E2D2", boxShadow: "inset 0 1px 2px rgba(0,0,0,0.25)" }} />
+          ))}
+        </>
       )}
 
-      <div style={{ marginTop: 16 }}>
-        {entrees.map((e) => {
-          const it = items.find((i) => i.id === e.itemId);
-          const col = it ? colleges.find((c) => c.id === it.collegeId) : null;
-          return (
-            <div key={e.id} style={{ marginBottom: 20 }}>
-              <p style={{ fontFamily: PLUME, fontSize: 20, color: ENCRE, lineHeight: 1.4, margin: 0 }}>
-                <span style={{ color: MARGE, fontWeight: 700 }}>›</span>{" "}
-                {e.qcm ? e.qcm.enonce : e.texte}
-              </p>
+      {contenu.map((b, k) => b.type === "titre" ? (
+        <div key={k} style={{ marginBottom: 12, marginTop: k ? 20 : 0 }}>
+          <p style={{ fontFamily: PLUME, fontSize: 25, fontWeight: 700, color: MARGE,
+            lineHeight: 1.25, margin: 0, borderBottom: `2px solid ${MARGE}`,
+            display: "inline-block", paddingBottom: 2 }}>
+            {b.titre}
+          </p>
+          {b.col && groupe !== "college" && (
+            <p style={{ fontFamily: PLUME, fontSize: 17, color: "#7E8A99", margin: "4px 0 0" }}>{b.col}</p>
+          )}
+        </div>
+      ) : (
+        <div key={k} style={{ marginBottom: 14 }}>
+          <p style={{ fontFamily: PLUME, fontSize: 19.5, color: ENCRE, lineHeight: 1.72, margin: 0 }}>
+            <span style={{ color: MARGE, fontWeight: 700, marginRight: 6 }}>•</span>
+            {b.e.qcm ? b.e.qcm.enonce : b.e.texte}
+          </p>
 
-              {e.qcm && (
-                <div style={{ marginTop: 6, marginLeft: 14 }}>
-                  {(e.qcm.props || []).map((p, i) => {
-                    const oubli = p.vrai && !p.coche;
-                    const tort = !p.vrai && p.coche;
-                    return (
-                      <p key={i} style={{ fontFamily: PLUME, fontSize: 17.5, lineHeight: 1.5, margin: 0,
-                        color: oubli || tort ? MARGE : p.vrai ? "#1E7A5C" : "#7A8494",
-                        textDecoration: tort ? "line-through" : "none" }}>
-                        {p.vrai && p.coche ? "✓ " : oubli ? "! " : tort ? "✗ " : "  "}{p.txt}
-                      </p>
-                    );
-                  })}
-                  {e.qcm.explication && (
-                    <p style={{ fontFamily: PLUME, fontSize: 17.5, lineHeight: 1.5, marginTop: 6,
-                      color: "#8A6B1F" }}>
-                      → {e.qcm.explication}
-                    </p>
-                  )}
-                </div>
+          {b.e.qcm && (
+            <div style={{ marginTop: 4, marginLeft: 16 }}>
+              {(b.e.qcm.props || []).map((p, i) => {
+                const oubli = p.vrai && !p.coche, tort = !p.vrai && p.coche;
+                if (!oubli && !tort && !p.vrai) return null;
+                return (
+                  <p key={i} style={{ fontFamily: PLUME, fontSize: 18, lineHeight: 1.65, margin: 0,
+                    color: oubli || tort ? MARGE : "#1B6E52",
+                    textDecoration: tort ? "line-through" : "none" }}>
+                    {p.vrai && p.coche ? "✓ " : oubli ? "oublié : " : "à tort : "}{p.txt}
+                  </p>
+                );
+              })}
+              {b.e.qcm.explication && (
+                <p style={{ fontFamily: PLUME, fontSize: 18, lineHeight: 1.65, marginTop: 5,
+                  color: "#8A6410" }}>→ {b.e.qcm.explication}</p>
               )}
-
-              <p style={{ fontFamily: PLUME, fontSize: 15, color: "#8A94A2", marginTop: 4 }}>
-                {dCourte(e.date) || e.date}
-                {it && <> · <button onClick={() => onOuvrir(it.id)}
-                  style={{ fontFamily: PLUME, fontSize: 15, color: ENCRE, textDecoration: "underline" }}>
-                  item {it.numero}</button></>}
-                {col ? ` · ${col.nom}` : ""}
-              </p>
             </div>
-          );
-        })}
+          )}
+
+          <p style={{ fontFamily: PLUME, fontSize: 15.5, color: "#93A0AE", margin: "3px 0 0 16px" }}>
+            {dCourte(b.e.date) || b.e.date}
+            {(() => {
+              const it = items.find((i) => i.id === b.e.itemId);
+              return it && groupe !== "item" ? (
+                <> · <button onClick={() => onOuvrir(it.id)}
+                  style={{ fontFamily: PLUME, fontSize: 15.5, color: ENCRE, textDecoration: "underline" }}>
+                  item {it.numero}</button></>
+              ) : null;
+            })()}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div>
+      <div onTouchStart={debut} onTouchEnd={fin} onPointerDown={debut} onPointerUp={fin}
+        style={{ perspective: 1600, touchAction: "pan-y" }}>
+        <div key={vue} className="flex"
+          style={{ borderRadius: 10, overflow: "hidden", background: "#D9CFBB",
+            boxShadow: "0 14px 34px rgba(0,0,0,0.42)",
+            animation: `${sens >= 0 ? "feuilletD" : "feuilletG"} 420ms cubic-bezier(0.22,1,0.36,1)`,
+            transformOrigin: sens >= 0 ? "left center" : "right center" }}>
+          {visibles.map((p, k) => (
+            <Page key={k} contenu={p} cote={parVue === 2 ? (k === 0 ? "g" : "d") : "s"} />
+          ))}
+          {parVue === 2 && visibles.length === 1 && <Page contenu={[]} cote="d" />}
+        </div>
       </div>
+
+      <div className="flex items-center gap-3 mt-3">
+        <button onClick={() => tourner(-1)} disabled={vue === 0}
+          className="doux flex items-center justify-center"
+          style={{ width: 42, height: 42, borderRadius: 999,
+            background: vue === 0 ? "transparent" : T.card,
+            border: `1px solid ${vue === 0 ? T.line : "transparent"}`,
+            color: vue === 0 ? "#3E5C7C" : T.ink, fontSize: 17 }}>‹</button>
+        <div className="flex-1 flex items-center justify-center gap-1.5">
+          {[...Array(nbVues)].slice(0, 14).map((_, k) => (
+            <span key={k} style={{ width: k === vue ? 16 : 6, height: 6, borderRadius: 999,
+              background: k === vue ? T.accent : T.line, transition: "width 200ms ease" }} />
+          ))}
+        </div>
+        <span className="text-xs" style={{ color: T.ink2 }}>{vue + 1} / {nbVues}</span>
+        <button onClick={() => tourner(1)} disabled={vue >= nbVues - 1}
+          className="doux flex items-center justify-center"
+          style={{ width: 42, height: 42, borderRadius: 999,
+            background: vue >= nbVues - 1 ? "transparent" : T.card,
+            border: `1px solid ${vue >= nbVues - 1 ? T.line : "transparent"}`,
+            color: vue >= nbVues - 1 ? "#3E5C7C" : T.ink, fontSize: 17 }}>›</button>
+      </div>
+      <p className="text-xs mt-2 text-center" style={{ color: T.ink2 }}>
+        Glisse latéralement pour tourner la page.
+      </p>
     </div>
   );
 }
@@ -8269,16 +8369,19 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
             )}
           </div>
 
-          <div className="flex gap-2 mb-3">
-            {[["liste", "Liste"], ["cahier", "Cahier"]].map(([v, l]) => (
-              <button key={v} onClick={() => setVueCahier(v === "cahier")}
-                className="flex-1 py-2.5 text-xs doux"
-                style={{ borderRadius: 12, fontWeight: 700,
-                  background: (v === "cahier") === vueCahier ? teinte.fg : teinte.bg,
-                  color: (v === "cahier") === vueCahier ? "#0E1A29" : teinte.fg }}>
-                {l}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs" style={{ color: T.ink2 }}>Affichage</span>
+            <div className="flex gap-1.5" style={{ background: T.paper, borderRadius: 999, padding: 3 }}>
+              {[[false, "Interface", "▤"], [true, "Carnet", "✎"]].map(([v, l, ic]) => (
+                <button key={l} onClick={() => setVueCahier(v)} title={l}
+                  className="doux flex items-center gap-1.5 px-3 py-2"
+                  style={{ borderRadius: 999, fontWeight: 700, fontSize: 12,
+                    background: vueCahier === v ? T.accent : "transparent",
+                    color: vueCahier === v ? "#fff" : T.ink2 }}>
+                  <span style={{ fontSize: 14 }}>{ic}</span>{l}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 mb-4">
@@ -8291,18 +8394,10 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
             ))}
           </div>
 
-          {vueCahier ? cles.map((cle) => {
-            const prem = paquets[cle][0];
-            const itG = groupe === "item" ? itemDe(prem) : null;
-            const colG = groupe === "college" && cle !== "Sans rattachement"
-              ? cle : (colDe(prem) || {}).nom;
-            return (
-              <PageCahier key={cle}
-                titre={itG ? `${itG.numero}. ${itG.titre}` : cle}
-                sousTitre={groupe !== "college" && colG ? colG : null}
-                entrees={paquets[cle]} items={items} colleges={colleges} onOuvrir={onOuvrir} />
-            );
-          }) : cles.map((cle) => {
+          {vueCahier ? (
+            <Carnet paquets={paquets} cles={cles} items={items} colleges={colleges}
+              onOuvrir={onOuvrir} groupe={groupe} itemDe={itemDe} colDe={colDe} />
+          ) : cles.map((cle) => {
             /* L'en-tête reprend toujours la couleur du collège concerné, y
                compris quand on classe par item ou par date. */
             const prem = paquets[cle][0];
