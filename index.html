@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v93";
+const VERSION = "v95";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -8011,9 +8011,9 @@ function itemsProbables(texte, items, colleges) {
 function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colDe }) {
   const [feuillet, setFeuillet] = useState(0);
   const [sens, setSens] = useState(0);
+  const [glisseX, setGlisseX] = useState(0);
 
-  /* Deux pages dès que la largeur le permet. Le seuil suit l'iPad en portrait,
-     et se recalcule à la rotation de l'appareil. */
+  /* Deux pages dès que la largeur le permet ; recalculé à la rotation. */
   const [large, setLarge] = useState(
     typeof window !== "undefined" ? window.innerWidth >= 680 : false);
   useEffect(() => {
@@ -8030,18 +8030,16 @@ function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colD
   const ENCRE = "#16386E";
   const PLUME = "'Kalam', 'Caveat', cursive";
 
-  /* Une entrée = un bloc. On répartit les blocs en pages de hauteur mesurée. */
   const blocs = [];
   cles.forEach((cle) => {
     const prem = paquets[cle][0];
     const itG = groupe === "item" ? itemDe(prem) : null;
     const colG = groupe === "college" && cle !== "Sans rattachement"
       ? cle : (colDe(prem) || {}).nom;
-    blocs.push({ type: "titre", cle, titre: itG ? `${itG.numero}. ${itG.titre}` : cle, col: colG });
-    paquets[cle].forEach((e) => blocs.push({ type: "entree", e, cle }));
+    blocs.push({ type: "titre", titre: itG ? `${itG.numero}. ${itG.titre}` : cle, col: colG });
+    paquets[cle].forEach((e) => blocs.push({ type: "entree", e }));
   });
 
-  /* découpage en pages : on compte des lignes approximatives */
   const LIGNES_PAGE = 15;
   const pages = [];
   let page = [], compte = 0;
@@ -8066,25 +8064,40 @@ function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colD
     setSens(d); setFeuillet(n);
   };
 
-  /* geste horizontal */
+  /* Glissement du doigt : la page suit, puis bascule au relâchement. */
   const depart = useRef(null);
-  const debut = (e) => { depart.current = e.touches ? e.touches[0].clientX : e.clientX; };
-  const fin = (e) => {
+  const departY = useRef(null);
+  const debut = (e) => {
+    const t = e.touches ? e.touches[0] : e;
+    depart.current = t.clientX; departY.current = t.clientY;
+  };
+  const bouger = (e) => {
     if (depart.current === null) return;
-    const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
-    const d = depart.current - x;
-    depart.current = null;
-    if (Math.abs(d) > 45) tourner(d > 0 ? 1 : -1);
+    const t = e.touches ? e.touches[0] : e;
+    const dx = t.clientX - depart.current;
+    const dy = t.clientY - departY.current;
+    if (Math.abs(dy) > Math.abs(dx)) return;   // défilement vertical : on n'intervient pas
+    if ((dx < 0 && vue >= nbVues - 1) || (dx > 0 && vue === 0)) {
+      setGlisseX(dx * 0.25); return;           // résistance en bout de carnet
+    }
+    setGlisseX(dx);
+  };
+  const fin = () => {
+    if (depart.current === null) return;
+    const dx = glisseX;
+    depart.current = null; departY.current = null;
+    setGlisseX(0);
+    if (Math.abs(dx) > 55) tourner(dx < 0 ? 1 : -1);
   };
 
   const Page = ({ contenu, cote }) => (
     <div style={{
       flex: 1, minWidth: 0, background: PAPIER,
-      padding: cote === "g" ? "26px 20px 30px 44px" : "26px 40px 30px 26px",
+      padding: cote === "g" ? "26px 20px 34px 44px" : cote === "d" ? "26px 40px 34px 26px" : "26px 22px 34px 44px",
       borderRadius: cote === "g" ? "8px 2px 2px 8px" : cote === "d" ? "2px 8px 8px 2px" : 8,
       backgroundImage: `repeating-linear-gradient(to bottom, transparent, transparent 33px, ${LIGNE}66 33px, ${LIGNE}66 34px)`,
       backgroundPosition: "0 40px",
-      position: "relative", minHeight: 430,
+      position: "relative", minHeight: 440,
       boxShadow: cote === "g" ? "inset -18px 0 24px -20px rgba(0,0,0,0.3)"
         : cote === "d" ? "inset 18px 0 24px -20px rgba(0,0,0,0.3)" : "none",
     }}>
@@ -8102,9 +8115,7 @@ function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colD
         <div key={k} style={{ marginBottom: 12, marginTop: k ? 20 : 0 }}>
           <p style={{ fontFamily: PLUME, fontSize: 25, fontWeight: 700, color: MARGE,
             lineHeight: 1.25, margin: 0, borderBottom: `2px solid ${MARGE}`,
-            display: "inline-block", paddingBottom: 2 }}>
-            {b.titre}
-          </p>
+            display: "inline-block", paddingBottom: 2 }}>{b.titre}</p>
           {b.col && groupe !== "college" && (
             <p style={{ fontFamily: PLUME, fontSize: 17, color: "#7E8A99", margin: "4px 0 0" }}>{b.col}</p>
           )}
@@ -8115,7 +8126,6 @@ function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colD
             <span style={{ color: MARGE, fontWeight: 700, marginRight: 6 }}>•</span>
             {b.e.qcm ? b.e.qcm.enonce : b.e.texte}
           </p>
-
           {b.e.qcm && (
             <div style={{ marginTop: 4, marginLeft: 16 }}>
               {(b.e.qcm.props || []).map((p, i) => {
@@ -8135,7 +8145,6 @@ function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colD
               )}
             </div>
           )}
-
           <p style={{ fontFamily: PLUME, fontSize: 15.5, color: "#93A0AE", margin: "3px 0 0 16px" }}>
             {dCourte(b.e.date) || b.e.date}
             {(() => {
@@ -8149,18 +8158,47 @@ function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colD
           </p>
         </div>
       ))}
+
+      <span style={{ position: "absolute", bottom: 12, right: cote === "g" ? "auto" : 18,
+        left: cote === "g" ? 44 : "auto", fontFamily: PLUME, fontSize: 14, color: "#A9B4C0" }}>
+        {pages.indexOf(contenu) + 1}
+      </span>
     </div>
   );
 
+  const Fleche = ({ d, actif }) => (
+    <button onClick={() => tourner(d)} disabled={!actif}
+      aria-label={d > 0 ? "Page suivante" : "Page précédente"}
+      className="doux flex items-center justify-center"
+      style={{ position: "absolute", top: "50%", transform: "translateY(-50%)",
+        [d > 0 ? "right" : "left"]: -6, zIndex: 5,
+        width: 44, height: 44, borderRadius: 999,
+        background: actif ? T.card : "transparent",
+        border: `1px solid ${actif ? T.line : "transparent"}`,
+        color: actif ? T.ink : "#2C4056", fontSize: 20, fontWeight: 700,
+        boxShadow: actif ? "0 4px 14px rgba(0,0,0,0.35)" : "none",
+        opacity: actif ? 1 : 0.3 }}>
+      {d > 0 ? "›" : "‹"}
+    </button>
+  );
+
   return (
-    <div>
-      <div onTouchStart={debut} onTouchEnd={fin} onPointerDown={debut} onPointerUp={fin}
-        style={{ perspective: 1600, touchAction: "pan-y" }}>
+    <div style={{ position: "relative" }}>
+      <div onTouchStart={debut} onTouchMove={bouger} onTouchEnd={fin}
+        onPointerDown={debut} onPointerMove={bouger} onPointerUp={fin} onPointerLeave={fin}
+        style={{ perspective: 1800, touchAction: "pan-y" }}>
         <div key={vue} className="flex"
           style={{ borderRadius: 10, overflow: "hidden", background: "#D9CFBB",
             boxShadow: "0 14px 34px rgba(0,0,0,0.42)",
-            animation: `${sens >= 0 ? "feuilletD" : "feuilletG"} 420ms cubic-bezier(0.22,1,0.36,1)`,
-            transformOrigin: sens >= 0 ? "left center" : "right center" }}>
+            transformStyle: "preserve-3d",
+            transform: glisseX
+              ? `rotateY(${Math.max(-16, Math.min(16, glisseX / 14))}deg)`
+              : "none",
+            transformOrigin: glisseX < 0 ? "right center" : "left center",
+            transition: glisseX ? "none" : "transform 260ms cubic-bezier(0.22,1,0.36,1)",
+            animation: glisseX ? "none"
+              : `${sens >= 0 ? "feuilletD" : "feuilletG"} 420ms cubic-bezier(0.22,1,0.36,1)`,
+          }}>
           {visibles.map((p, k) => (
             <Page key={k} contenu={p} cote={parVue === 2 ? (k === 0 ? "g" : "d") : "s"} />
           ))}
@@ -8168,30 +8206,20 @@ function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colD
         </div>
       </div>
 
-      <div className="flex items-center gap-3 mt-3">
-        <button onClick={() => tourner(-1)} disabled={vue === 0}
-          className="doux flex items-center justify-center"
-          style={{ width: 42, height: 42, borderRadius: 999,
-            background: vue === 0 ? "transparent" : T.card,
-            border: `1px solid ${vue === 0 ? T.line : "transparent"}`,
-            color: vue === 0 ? "#3E5C7C" : T.ink, fontSize: 17 }}>‹</button>
-        <div className="flex-1 flex items-center justify-center gap-1.5">
-          {[...Array(nbVues)].slice(0, 14).map((_, k) => (
-            <span key={k} style={{ width: k === vue ? 16 : 6, height: 6, borderRadius: 999,
-              background: k === vue ? T.accent : T.line, transition: "width 200ms ease" }} />
+      <Fleche d={-1} actif={vue > 0} />
+      <Fleche d={1} actif={vue < nbVues - 1} />
+
+      <div className="flex items-center justify-center gap-2 mt-3">
+        <div className="flex items-center gap-1.5">
+          {[...Array(nbVues)].slice(0, 16).map((_, k) => (
+            <button key={k} onClick={() => { setSens(k > vue ? 1 : -1); setFeuillet(k); }}
+              aria-label={`Page ${k + 1}`}
+              style={{ width: k === vue ? 18 : 7, height: 7, borderRadius: 999,
+                background: k === vue ? T.accent : T.line, transition: "width 200ms ease" }} />
           ))}
         </div>
-        <span className="text-xs" style={{ color: T.ink2 }}>{vue + 1} / {nbVues}</span>
-        <button onClick={() => tourner(1)} disabled={vue >= nbVues - 1}
-          className="doux flex items-center justify-center"
-          style={{ width: 42, height: 42, borderRadius: 999,
-            background: vue >= nbVues - 1 ? "transparent" : T.card,
-            border: `1px solid ${vue >= nbVues - 1 ? T.line : "transparent"}`,
-            color: vue >= nbVues - 1 ? "#3E5C7C" : T.ink, fontSize: 17 }}>›</button>
+        <span className="text-xs ml-2" style={{ color: T.ink2 }}>{vue + 1} / {nbVues}</span>
       </div>
-      <p className="text-xs mt-2 text-center" style={{ color: T.ink2 }}>
-        Glisse latéralement pour tourner la page.
-      </p>
     </div>
   );
 }
@@ -8250,37 +8278,42 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-1">
-        <h2 className="flex-1 min-w-0" style={{ fontFamily: serif, fontSize: 26 }}>Carnet d'erreurs</h2>
-        <div className="flex gap-1 shrink-0" style={{ background: T.card, borderRadius: 999, padding: 3 }}>
+      <h2 className="mb-3" style={{ fontFamily: serif, fontSize: 26 }}>Carnet d'erreurs</h2>
+
+      {/* Une seule barre de commandes : quoi je regarde, comment je le regarde. */}
+      <div className="flex items-stretch gap-2 mb-4">
+        {[["erreurs", "Erreurs", ERREUR, erreurs.filter(estErreur).length],
+          ["memos", "Mémos", MEMO, erreurs.filter((e) => !estErreur(e)).length]].map(([v, l, t, n]) => (
+          <button key={v} onClick={() => { setSection(v); setDeplie(null); setEnvoi(null); }}
+            className="flex-1 doux flex flex-col items-center justify-center"
+            style={{ borderRadius: 16, padding: "9px 6px",
+              background: section === v ? t.fg : t.bg, color: section === v ? "#0E1A29" : t.fg }}>
+            <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.1 }}>{n}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.9 }}>{l}</span>
+          </button>
+        ))}
+
+        <div className="flex gap-1 shrink-0" style={{ background: T.card, borderRadius: 16, padding: 4 }}>
           {[[false, "Interface", "▤"], [true, "Carnet", "✎"]].map(([v, l, ic]) => (
             <button key={l} onClick={() => setVueCahier(v)} title={l} aria-label={l}
-              className="doux flex items-center justify-center"
-              style={{ width: 40, height: 34, borderRadius: 999, fontSize: 16,
+              className="doux flex flex-col items-center justify-center"
+              style={{ width: 52, borderRadius: 13,
                 background: vueCahier === v ? T.accent : "transparent",
                 color: vueCahier === v ? "#fff" : T.ink2 }}>
-              {ic}
+              <span style={{ fontSize: 17, lineHeight: 1.1 }}>{ic}</span>
+              <span style={{ fontSize: 9.5, fontWeight: 700, marginTop: 2 }}>{l}</span>
             </button>
           ))}
         </div>
       </div>
-      <p className="text-xs mb-4" style={{ color: T.ink2, lineHeight: 1.6 }}>
-        {section === "erreurs"
-          ? "Ce que tu rates : QCM mis de côté et notes d'erreur."
-          : "Ce que tu ne veux pas oublier : rappels, astuces, choses à faire."}
-      </p>
 
-      {/* deux sections distinctes */}
-      <div className="flex gap-2 mb-4">
-        {[["erreurs", "Erreurs", ERREUR, erreurs.filter(estErreur).length],
-          ["memos", "Mémos", MEMO, erreurs.filter((e) => !estErreur(e)).length]].map(([v, l, t, n]) => (
-          <button key={v} onClick={() => { setSection(v); setDeplie(null); setEnvoi(null); }}
-            className="flex-1 py-3 doux" style={{ borderRadius: 16, fontWeight: 700, fontSize: 14,
-              background: section === v ? t.fg : t.bg, color: section === v ? "#0E1A29" : t.fg }}>
-            {l} <span style={{ fontWeight: 500, opacity: 0.8 }}>({n})</span>
-          </button>
-        ))}
-      </div>
+      <p className="text-xs mb-4" style={{ color: T.ink2, lineHeight: 1.6 }}>
+        {vueCahier
+          ? "Glisse latéralement pour tourner les pages."
+          : section === "erreurs"
+            ? "Ce que tu rates : QCM mis de côté et notes d'erreur."
+            : "Ce que tu ne veux pas oublier : rappels, astuces, choses à faire."}
+      </p>
 
       {/* saisie — masquée en mode carnet, qui est un mode lecture */}
       {!vueCahier && (<>
