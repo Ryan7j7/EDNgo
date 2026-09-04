@@ -9,7 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%230E1A29'/><circle cx='11' cy='11' r='3.6' fill='%2354A9EA'/><circle cx='21' cy='11' r='3.6' fill='%23EAAE43'/><circle cx='11' cy='21' r='3.6' fill='%23E4685D'/><circle cx='21' cy='21' r='3.6' fill='%2335B48C'/></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Caveat:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v90";
+const VERSION = "v91";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -489,7 +489,7 @@ const ONGLETS = [
   ["stats",     "Statistiques", "◫", "Temps et volume", "#8DD16A", "#111F0E"],
   ["horloge",   "Horloge",   "◷", "Minuteur, chrono",   "#7C9BF0", "#101529"],
   ["resultats", "Résultats", "◔", "Mes scores",         "#EFC94C", "#211D0C"],
-  ["erreurs",   "Erreurs / Mémos", "!", "Ce que je rate, ce que je garde", "#FF5A5A", "#2A0F12"],
+  ["erreurs",   "Carnet d'erreurs", "!", "Mes erreurs et mes mémos", "#FF5A5A", "#2A0F12"],
 ];
 const teinteOnglet = (v) => {
   const o = ONGLETS.find(([x]) => x === v);
@@ -8004,6 +8004,87 @@ function itemsProbables(texte, items, colleges) {
   return notes.slice(0, 4).map((x) => x.i);
 }
 
+/* Rendu « cahier » : page crème, réglure, marge rouge, écriture manuscrite.
+   L'objectif est de relire ses erreurs comme on relit un cahier, pas un écran. */
+function PageCahier({ titre, sousTitre, entrees, items, colleges, onOuvrir }) {
+  const PAPIER = "#FBF7EC";
+  const LIGNE = "#C8D6E8";
+  const MARGE = "#D96A5E";
+  const ENCRE = "#1B3A6B";
+  const PLUME = "'Caveat', 'Segoe Script', cursive";
+
+  return (
+    <div className="vue" style={{
+      background: PAPIER, borderRadius: 6, padding: "26px 20px 30px 46px", marginBottom: 16,
+      position: "relative", overflow: "hidden",
+      backgroundImage: `repeating-linear-gradient(to bottom, transparent, transparent 27px, ${LIGNE}55 27px, ${LIGNE}55 28px)`,
+      backgroundPosition: "0 34px",
+      boxShadow: "0 10px 26px rgba(0,0,0,0.36), inset -14px 0 22px -18px rgba(0,0,0,0.22)",
+    }}>
+      {/* marge rouge et perforations */}
+      <span style={{ position: "absolute", top: 0, bottom: 0, left: 34, width: 1.4, background: MARGE, opacity: 0.75 }} />
+      {[0.16, 0.5, 0.84].map((p, k) => (
+        <span key={k} style={{ position: "absolute", left: 12, top: `${p * 100}%`,
+          width: 11, height: 11, borderRadius: 999, background: "#E8E2D4",
+          boxShadow: "inset 0 1px 2px rgba(0,0,0,0.22)" }} />
+      ))}
+
+      <h3 style={{ fontFamily: PLUME, fontSize: 30, color: ENCRE, lineHeight: 1.1,
+        display: "inline-block", borderBottom: `2.5px solid ${MARGE}`, paddingBottom: 2 }}>
+        {titre}
+      </h3>
+      {sousTitre && (
+        <p style={{ fontFamily: PLUME, fontSize: 17, color: "#6B7A8C", marginTop: 6 }}>{sousTitre}</p>
+      )}
+
+      <div style={{ marginTop: 16 }}>
+        {entrees.map((e) => {
+          const it = items.find((i) => i.id === e.itemId);
+          const col = it ? colleges.find((c) => c.id === it.collegeId) : null;
+          return (
+            <div key={e.id} style={{ marginBottom: 20 }}>
+              <p style={{ fontFamily: PLUME, fontSize: 20, color: ENCRE, lineHeight: 1.4, margin: 0 }}>
+                <span style={{ color: MARGE, fontWeight: 700 }}>›</span>{" "}
+                {e.qcm ? e.qcm.enonce : e.texte}
+              </p>
+
+              {e.qcm && (
+                <div style={{ marginTop: 6, marginLeft: 14 }}>
+                  {(e.qcm.props || []).map((p, i) => {
+                    const oubli = p.vrai && !p.coche;
+                    const tort = !p.vrai && p.coche;
+                    return (
+                      <p key={i} style={{ fontFamily: PLUME, fontSize: 17.5, lineHeight: 1.5, margin: 0,
+                        color: oubli || tort ? MARGE : p.vrai ? "#1E7A5C" : "#7A8494",
+                        textDecoration: tort ? "line-through" : "none" }}>
+                        {p.vrai && p.coche ? "✓ " : oubli ? "! " : tort ? "✗ " : "  "}{p.txt}
+                      </p>
+                    );
+                  })}
+                  {e.qcm.explication && (
+                    <p style={{ fontFamily: PLUME, fontSize: 17.5, lineHeight: 1.5, marginTop: 6,
+                      color: "#8A6B1F" }}>
+                      → {e.qcm.explication}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <p style={{ fontFamily: PLUME, fontSize: 15, color: "#8A94A2", marginTop: 4 }}>
+                {dCourte(e.date) || e.date}
+                {it && <> · <button onClick={() => onOuvrir(it.id)}
+                  style={{ fontFamily: PLUME, fontSize: 15, color: ENCRE, textDecoration: "underline" }}>
+                  item {it.numero}</button></>}
+                {col ? ` · ${col.nom}` : ""}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, onSupprimer, onOuvrir }) {
   const [section, setSection] = useState("erreurs");
   const [texte, setTexte] = useState("");
@@ -8013,6 +8094,7 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
   const [edite, setEdite] = useState(null);
   const [brouillon, setBrouillon] = useState("");
   const [envoi, setEnvoi] = useState(null);
+  const [vueCahier, setVueCahier] = useState(false);
   const [aRanger, setARanger] = useState(null);
 
   /* Une entrée appartient aux erreurs si c'est un QCM raté ou si elle a été
@@ -8057,7 +8139,7 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
 
   return (
     <div>
-      <h2 className="mb-1" style={{ fontFamily: serif, fontSize: 26 }}>Erreurs / Mémos</h2>
+      <h2 className="mb-1" style={{ fontFamily: serif, fontSize: 26 }}>Carnet d'erreurs / Mémos</h2>
       <p className="text-xs mb-4" style={{ color: T.ink2, lineHeight: 1.6 }}>
         {section === "erreurs"
           ? "Ce que tu rates : QCM mis de côté et notes d'erreur."
@@ -8187,7 +8269,18 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
             )}
           </div>
 
-          {/* regroupement */}
+          <div className="flex gap-2 mb-3">
+            {[["liste", "Liste"], ["cahier", "Cahier"]].map(([v, l]) => (
+              <button key={v} onClick={() => setVueCahier(v === "cahier")}
+                className="flex-1 py-2.5 text-xs doux"
+                style={{ borderRadius: 12, fontWeight: 700,
+                  background: (v === "cahier") === vueCahier ? teinte.fg : teinte.bg,
+                  color: (v === "cahier") === vueCahier ? "#0E1A29" : teinte.fg }}>
+                {l}
+              </button>
+            ))}
+          </div>
+
           <div className="flex flex-wrap gap-2 mb-4">
             <span className="text-xs py-2" style={{ color: T.ink2 }}>Classer par</span>
             {[["college", "Collège"], ["item", "Item"], ["date", "Date"]].map(([v, l]) => (
@@ -8198,7 +8291,18 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
             ))}
           </div>
 
-          {cles.map((cle) => {
+          {vueCahier ? cles.map((cle) => {
+            const prem = paquets[cle][0];
+            const itG = groupe === "item" ? itemDe(prem) : null;
+            const colG = groupe === "college" && cle !== "Sans rattachement"
+              ? cle : (colDe(prem) || {}).nom;
+            return (
+              <PageCahier key={cle}
+                titre={itG ? `${itG.numero}. ${itG.titre}` : cle}
+                sousTitre={groupe !== "college" && colG ? colG : null}
+                entrees={paquets[cle]} items={items} colleges={colleges} onOuvrir={onOuvrir} />
+            );
+          }) : cles.map((cle) => {
             /* L'en-tête reprend toujours la couleur du collège concerné, y
                compris quand on classe par item ou par date. */
             const prem = paquets[cle][0];
