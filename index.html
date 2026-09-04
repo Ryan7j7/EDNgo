@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v86";
+const VERSION = "v87";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -718,13 +718,356 @@ function SchemaThorax({ legende }) {
   );
 }
 
+/* Schémas d'échographie gynécologique. Dessinés, non photographiques :
+   ils isolent le signe à reconnaître sans le bruit d'une image réelle. */
+function SchemaEcho({ variante, legende }) {
+  const F = "#0A0E14";      // fond, noir échographique
+  const A = "#0D1420";      // anéchogène
+  const G = "#8FA3B8";      // gris tissulaire
+  const Gc = "#C3D2E0";     // gris clair, échogène
+  const B = "#F2F6FA";      // blanc, hyperéchogène
+  const R = "#E4685D";      // repère rouge
+  const J = "#EAC53F";      // repère jaune
+
+  const cadre = (enfants) => (
+    <svg viewBox="0 0 320 200" width="100%" style={{ display: "block", borderRadius: 14, background: F }}>
+      <defs>
+        <radialGradient id="halo" cx="50%" cy="50%">
+          <stop offset="0%" stopColor="#1A2636" />
+          <stop offset="100%" stopColor={F} />
+        </radialGradient>
+      </defs>
+      <rect width="320" height="200" fill="url(#halo)" />
+      {enfants}
+    </svg>
+  );
+
+  const etiquette = (x, y, t, c) => (
+    <g>
+      <rect x={x} y={y - 9} width={t.length * 5.4 + 10} height="15" rx="7" fill={c} opacity="0.92" />
+      <text x={x + 5} y={y + 1.5} fontSize="9" fontWeight="700" fill="#0A0E14">{t}</text>
+    </g>
+  );
+
+  let dessin = null;
+
+  if (variante === "kyste-simple") {
+    dessin = (<g>
+      <ellipse cx="140" cy="95" rx="62" ry="52" fill={A} stroke={Gc} strokeWidth="2" />
+      <rect x="82" y="147" width="116" height="26" fill="#243447" opacity="0.55" />
+      {etiquette(20, 40, "paroi fine, régulière", Gc)}
+      {etiquette(20, 168, "renforcement postérieur", Gc)}
+      <line x1="120" y1="45" x2="95" y2="36" stroke={Gc} strokeWidth="1" />
+    </g>);
+  } else if (variante === "kyste-hemorragique") {
+    dessin = (<g>
+      <ellipse cx="150" cy="95" rx="64" ry="54" fill={A} stroke={Gc} strokeWidth="2" />
+      <g stroke={Gc} strokeWidth="0.9" fill="none" opacity="0.85">
+        <path d="M100 70 Q140 88 196 74" /><path d="M96 96 Q150 82 202 104" />
+        <path d="M104 122 Q148 104 198 126" /><path d="M128 52 Q136 96 122 138" />
+        <path d="M168 50 Q160 98 176 138" />
+      </g>
+      {etiquette(18, 36, "réseau de fibrine", Gc)}
+      {etiquette(18, 176, "aucun flux Doppler interne", R)}
+    </g>);
+  } else if (variante === "endometriome") {
+    dessin = (<g>
+      <ellipse cx="150" cy="95" rx="62" ry="52" fill="#1B2735" stroke={Gc} strokeWidth="2" />
+      {[...Array(90)].map((_, k) => {
+        const a = (k * 137.5 * Math.PI) / 180, r = 46 * Math.sqrt((k + 1) / 90);
+        return <circle key={k} cx={150 + r * Math.cos(a) * 1.18} cy={95 + r * Math.sin(a)} r="1.1" fill={Gc} opacity="0.75" />;
+      })}
+      {etiquette(18, 36, "verre dépoli homogène", Gc)}
+      {etiquette(18, 176, "IRM : T1 élevé, T2 en shading", J)}
+    </g>);
+  } else if (variante === "dermoide") {
+    dessin = (<g>
+      <ellipse cx="145" cy="88" rx="64" ry="52" fill="#151E2B" stroke={Gc} strokeWidth="2" />
+      <circle cx="120" cy="74" r="20" fill={B} />
+      <rect x="102" y="94" width="36" height="86" fill={F} opacity="0.92" />
+      <g stroke={B} strokeWidth="1.2" opacity="0.9">
+        <line x1="160" y1="70" x2="198" y2="78" /><line x1="158" y1="86" x2="200" y2="92" />
+        <line x1="162" y1="102" x2="196" y2="106" />
+      </g>
+      {etiquette(150, 36, "nodule de Rokitansky", B)}
+      {etiquette(18, 176, "cône d'ombre postérieur", Gc)}
+    </g>);
+  } else if (variante === "masse-maligne") {
+    dessin = (<g>
+      <path d="M84 96 Q88 44 142 40 Q206 36 214 92 Q220 148 148 152 Q86 154 84 96 Z"
+        fill="#16202D" stroke={Gc} strokeWidth="2" />
+      <g fill={Gc}>
+        <path d="M120 58 q10 -16 22 -4 q-6 12 -22 4 Z" />
+        <path d="M168 62 q14 -14 24 0 q-10 12 -24 0 Z" />
+        <path d="M186 108 q16 -6 18 8 q-14 8 -18 -8 Z" />
+      </g>
+      <line x1="98" y1="110" x2="212" y2="102" stroke={Gc} strokeWidth="5" opacity="0.9" />
+      <g stroke={R} strokeWidth="2" fill="none">
+        <path d="M140 96 q14 -12 26 -2" /><path d="M148 108 q16 8 30 2" />
+      </g>
+      {etiquette(18, 32, "végétations papillaires", Gc)}
+      {etiquette(18, 176, "cloison épaisse · flux central", R)}
+    </g>);
+  } else if (variante === "fibrome") {
+    dessin = (<g>
+      <path d="M70 60 Q160 30 250 62 Q262 120 160 166 Q58 122 70 60 Z" fill="#2A3A4D" stroke={Gc} strokeWidth="2" />
+      <path d="M120 96 Q160 84 200 96 Q160 108 120 96 Z" fill={B} opacity="0.85" />
+      <ellipse cx="112" cy="92" rx="30" ry="27" fill="#18222F" stroke={Gc} strokeWidth="1.6" />
+      <rect x="86" y="118" width="52" height="52" fill={F} opacity="0.55" />
+      {etiquette(18, 34, "masse hypoéchogène bien limitée", Gc)}
+      {etiquette(150, 176, "atténuation postérieure", Gc)}
+    </g>);
+  } else if (variante === "adenomyose") {
+    dessin = (<g>
+      <path d="M62 62 Q160 26 258 66 Q268 126 160 172 Q52 126 62 62 Z" fill="#2A3A4D" stroke={Gc} strokeWidth="2" />
+      <path d="M126 98 Q160 88 194 98 Q160 108 126 98 Z" fill={B} opacity="0.8" />
+      <path d="M108 88 Q160 74 212 88 Q160 122 108 88 Z" fill="none" stroke={J} strokeWidth="4" opacity="0.85" />
+      {[[96, 74], [104, 116], [214, 82], [206, 122], [140, 62]].map(([x, y], k) => (
+        <circle key={k} cx={x} cy={y} r="4.5" fill={A} stroke={Gc} strokeWidth="1" />
+      ))}
+      {etiquette(18, 32, "paroi postérieure épaissie", Gc)}
+      {etiquette(150, 176, "zone jonctionnelle > 12 mm", J)}
+    </g>);
+  } else if (variante === "polype") {
+    dessin = (<g>
+      <path d="M66 62 Q160 30 254 64 Q264 122 160 168 Q56 124 66 62 Z" fill="#2A3A4D" stroke={Gc} strokeWidth="2" />
+      <path d="M112 98 Q160 86 208 98 Q160 110 112 98 Z" fill="#0F1722" />
+      <ellipse cx="168" cy="97" rx="26" ry="14" fill={Gc} />
+      <line x1="196" y1="97" x2="206" y2="97" stroke={R} strokeWidth="2.5" />
+      {etiquette(18, 32, "image endocavitaire échogène", Gc)}
+      {etiquette(140, 176, "pédicule vasculaire unique", R)}
+    </g>);
+  } else if (variante === "endometre-epais") {
+    dessin = (<g>
+      <path d="M66 62 Q160 30 254 64 Q264 122 160 168 Q56 124 66 62 Z" fill="#2A3A4D" stroke={Gc} strokeWidth="2" />
+      <path d="M104 96 Q160 70 216 96 Q160 124 104 96 Z" fill={Gc} opacity="0.9" />
+      <g stroke={R} strokeWidth="1.6">
+        <line x1="160" y1="76" x2="160" y2="117" />
+        <line x1="154" y1="76" x2="166" y2="76" /><line x1="154" y1="117" x2="166" y2="117" />
+      </g>
+      {etiquette(18, 32, "endomètre épaissi, hétérogène", Gc)}
+      {etiquette(150, 176, "> 4 mm après la ménopause", R)}
+    </g>);
+  } else if (variante === "geu") {
+    dessin = (<g>
+      <path d="M40 74 Q110 46 176 76 Q184 124 112 160 Q34 126 40 74 Z" fill="#2A3A4D" stroke={Gc} strokeWidth="2" />
+      <path d="M76 106 Q112 96 148 106 Q112 116 76 106 Z" fill="#0F1722" />
+      <ellipse cx="238" cy="82" rx="34" ry="26" fill="#18222F" stroke={Gc} strokeWidth="2" />
+      <circle cx="238" cy="82" r="12" fill={A} stroke={B} strokeWidth="2.5" />
+      <path d="M150 158 Q210 176 280 156 Q220 190 150 158 Z" fill={A} stroke={Gc} strokeWidth="1.2" />
+      {etiquette(18, 36, "utérus vide", Gc)}
+      {etiquette(198, 36, "masse latéro-utérine", B)}
+      {etiquette(178, 192, "épanchement du Douglas", Gc)}
+    </g>);
+  } else if (variante === "mole") {
+    dessin = (<g>
+      <path d="M56 58 Q160 22 262 62 Q272 128 160 176 Q46 128 56 58 Z" fill="#2A3A4D" stroke={Gc} strokeWidth="2" />
+      {[...Array(120)].map((_, k) => {
+        const a = (k * 137.5 * Math.PI) / 180, r = 58 * Math.sqrt((k + 1) / 120);
+        return <circle key={k} cx={160 + r * Math.cos(a) * 1.5} cy={100 + r * Math.sin(a) * 0.9}
+          r={1.6 + (k % 4) * 0.5} fill={k % 3 ? A : Gc} stroke={Gc} strokeWidth="0.4" />;
+      })}
+      {etiquette(18, 32, "aspect en tempête de neige", Gc)}
+      {etiquette(150, 190, "pas d'embryon · hCG très élevées", J)}
+    </g>);
+  } else if (variante === "hydrosalpinx") {
+    dessin = (<g>
+      <path d="M52 118 Q84 58 132 78 Q178 98 214 62 Q258 24 282 78"
+        fill="none" stroke={Gc} strokeWidth="20" strokeLinecap="round" opacity="0.55" />
+      <path d="M52 118 Q84 58 132 78 Q178 98 214 62 Q258 24 282 78"
+        fill="none" stroke={A} strokeWidth="13" strokeLinecap="round" />
+      <g stroke={Gc} strokeWidth="2">
+        <line x1="106" y1="76" x2="112" y2="88" /><line x1="160" y1="82" x2="166" y2="94" />
+        <line x1="228" y1="56" x2="234" y2="68" />
+      </g>
+      {etiquette(18, 168, "structure tubulée, cloisons incomplètes", Gc)}
+    </g>);
+  } else if (variante === "torsion") {
+    dessin = (<g>
+      <ellipse cx="150" cy="96" rx="72" ry="60" fill="#22303F" stroke={Gc} strokeWidth="2" />
+      {[...Array(11)].map((_, k) => {
+        const a = (k / 11) * 2 * Math.PI;
+        return <circle key={k} cx={150 + 56 * Math.cos(a)} cy={96 + 46 * Math.sin(a)} r="7"
+          fill={A} stroke={Gc} strokeWidth="1.2" />;
+      })}
+      <path d="M228 128 q18 12 6 26 q-14 12 -26 -2" fill="none" stroke={R} strokeWidth="3" />
+      {etiquette(18, 30, "ovaire augmenté, œdématié", Gc)}
+      {etiquette(140, 186, "follicules refoulés en périphérie", Gc)}
+    </g>);
+  } else {
+    dessin = <text x="160" y="100" fontSize="11" fill={G} textAnchor="middle">schéma indisponible</text>;
+  }
+
+  return (
+    <figure style={{ margin: "18px 0 22px" }}>
+      {cadre(dessin)}
+      {legende && (
+        <figcaption className="text-xs mt-2" style={{ color: T.ink2, lineHeight: 1.6 }}>{legende}</figcaption>
+      )}
+    </figure>
+  );
+}
+
 function Figure({ nom, legende }) {
   if (nom === "thorax") return <SchemaThorax legende={legende} />;
+  if (nom.startsWith("echo:")) return <SchemaEcho variante={nom.slice(5)} legende={legende} />;
   return <TraceECG variante={nom} legende={legende} />;
 }
 
 /* ================== cours transversaux ================== */
 const COURS_INIT = [
+  {
+    id: "echo-gyneco",
+    titre: "Échographie et IRM à savoir",
+    famille: "Gynécologie-obstétrique",
+    contenu: `## Comment lire cette fiche
+Chaque pathologie est décrite par ce qu'on voit et par ce qui permet d'affirmer. Le schéma isole le signe, sans le bruit d'une image réelle. La règle de fond : l'échographie par voie endovaginale est l'examen de première intention, l'IRM vient caractériser ce qui reste douteux ou faire le bilan d'extension.
+
+## Trois questions devant toute masse annexielle
+- Le contenu est-il purement liquidien, ou existe-t-il une composante solide ?
+- Y a-t-il des végétations, des cloisons épaisses, une ascite ?
+- Le Doppler montre-t-il un flux à l'intérieur de la partie solide ?
+Une masse uniloculaire, anéchogène, à paroi fine, sans flux interne, est bénigne dans l'immense majorité des cas. Une composante solide vascularisée fait suspecter la malignité.
+
+## Kyste fonctionnel
+[[fig:echo:kyste-simple|Kyste folliculaire : uniloculaire, anéchogène, paroi fine et régulière, renforcement postérieur des échos.]]
+- Uniloculaire, anéchogène, paroi fine et régulière, sans cloison ni végétation
+- Renforcement postérieur des échos, signe de la nature liquidienne pure
+- Diamètre habituellement inférieur à 5 cm
+- Ce qui affirme : la disparition spontanée sur un contrôle à distance, après les règles
+- Ne jamais opérer sans avoir contrôlé : c'est la cause la plus fréquente de chirurgie inutile
+
+## Kyste hémorragique du corps jaune
+[[fig:echo:kyste-hemorragique|Réseau de fibrine en dentelle, sans aucun flux interne au Doppler.]]
+- Contenu traversé d'un réseau fin, décrit comme une dentelle ou une toile d'araignée
+- Ce réseau correspond à la fibrine, non à des cloisons : les travées sont fines et irrégulières
+- Aucun flux Doppler à l'intérieur du réseau, ce qui le distingue d'une cloison tumorale
+- Couronne vasculaire périphérique possible, sans signification péjorative
+- Ce qui affirme : la régression sur un contrôle à six à huit semaines
+- Contexte typique : douleur pelvienne brutale en deuxième partie de cycle
+
+## Endométriome
+[[fig:echo:endometriome|Contenu finement échogène et homogène, en verre dépoli, sans végétation.]]
+- Contenu finement échogène, homogène, décrit comme du verre dépoli
+- Paroi régulière, absence de végétation, absence de flux interne
+- Souvent bilatéral, parfois accolé à l'autre ovaire par des adhérences
+- IRM, examen de référence : hypersignal franc en T1 qui persiste en T1 avec saturation de la graisse, et hyposignal T2 hétérogène appelé shading
+- Le shading traduit la concentration en produits de dégradation de l'hémoglobine
+- Piège : un endométriome peut simuler un kyste hémorragique ; c'est la persistance à distance qui tranche
+
+## Tératome mature, ou kyste dermoïde
+[[fig:echo:dermoide|Nodule de Rokitansky hyperéchogène avec cône d'ombre postérieur, lignes échogènes correspondant aux cheveux.]]
+- Nodule hyperéchogène appelé nodule de Rokitansky, avec cône d'ombre postérieur franc
+- Lignes et points échogènes correspondant aux cheveux
+- Niveau liquide-liquide possible, par sédimentation de la graisse
+- IRM : hypersignal T1 qui chute en saturation de graisse, signature de la composante graisseuse
+- C'est ce comportement en saturation de graisse qui le distingue de l'endométriome, dont le signal T1 persiste
+
+## Signes de malignité ovarienne
+[[fig:echo:masse-maligne|Composante solide, végétations papillaires, cloison épaisse, flux central au Doppler.]]
+- Composante solide vascularisée, avec flux central au Doppler
+- Végétations papillaires de plus de 3 mm
+- Cloisons épaisses, contours irréguliers
+- Ascite associée
+- Masse de grande taille, souvent bilatérale
+- Terrain : femme ménopausée, antécédent familial, mutation BRCA
+- L'analyse repose sur des critères descriptifs standardisés : présence de signes de bénignité, présence de signes de malignité, et cas indéterminés relevant d'un avis expert ou d'une IRM
+
+## Torsion d'annexe
+[[fig:echo:torsion|Ovaire globuleux et œdématié, follicules refoulés en périphérie.]]
+- Ovaire augmenté de volume, globuleux, d'échostructure œdématiée
+- Follicules refoulés en périphérie par l'œdème du stroma
+- Aspect tourbillonnaire du pédicule vasculaire, quand il est visible
+- Piège capital : un Doppler normal n'élimine pas le diagnostic, la double vascularisation ovarienne pouvant persister
+- Devant une douleur brutale évocatrice, la clinique prime sur le Doppler
+
+## Fibrome utérin
+[[fig:echo:fibrome|Masse hypoéchogène bien limitée, avec atténuation postérieure.]]
+- Masse arrondie, bien limitée, hypoéchogène, déformant les contours utérins ou la cavité
+- Atténuation postérieure des échos, à l'inverse du renforcement des lésions liquidiennes
+- Vascularisation périphérique en couronne au Doppler
+- IRM en cas de fibromes multiples ou avant traitement conservateur : hyposignal T2 homogène très caractéristique
+- La localisation par rapport à la cavité conditionne le retentissement : les sous-muqueux saignent, les sous-séreux comprime
+- Nécrobiose aseptique : fibrome devenu hétérogène avec zones liquidiennes, douleur et fébricule, sans infection
+
+## Adénomyose
+[[fig:echo:adenomyose|Utérus globuleux, paroi postérieure épaissie, kystes myométriaux, zone jonctionnelle élargie.]]
+- Utérus globuleux avec asymétrie d'épaisseur des parois, la postérieure étant plus souvent atteinte
+- Kystes myométriaux de petite taille, très évocateurs
+- Aspect strié du myomètre, décrit comme une averse
+- Mauvaise délimitation de la zone de transition entre endomètre et myomètre
+- IRM, examen de référence : épaississement de la zone jonctionnelle au-delà de 12 mm en T2
+- Clinique associée : ménorragies et dysménorrhée sur utérus globuleux
+
+## Polype endométrial
+[[fig:echo:polype|Image endocavitaire échogène avec pédicule vasculaire unique au Doppler.]]
+- Image endocavitaire hyperéchogène, bien limitée, entourée de liquide en phase folliculaire
+- Pédicule vasculaire unique au Doppler : c'est le signe qui l'affirme
+- Mieux visible en hystérosonographie, l'injection de sérum décollant les parois
+- L'hystéroscopie permet le diagnostic et le traitement dans le même temps
+
+## Endomètre et cancer de l'endomètre
+[[fig:echo:endometre-epais|Endomètre épaissi et hétérogène : au-delà de 4 mm après la ménopause, l'histologie est nécessaire.]]
+- Après la ménopause, un endomètre supérieur à 4 mm devant des métrorragies impose un prélèvement histologique
+- Aspect hétérogène, contours irréguliers, vascularisation anarchique au Doppler
+- Une échographie rassurante ne dispense pas d'explorer une récidive de saignement
+- IRM pelvienne pour le bilan d'extension : elle évalue l'invasion du myomètre et l'atteinte du col
+- Retenir la hiérarchie : l'échographie sélectionne, l'histologie affirme, l'IRM stadifie
+
+## Cancer du col utérin
+- Le diagnostic est histologique, sur biopsie : l'imagerie ne fait jamais le diagnostic
+- L'IRM pelvienne est l'examen de référence du bilan d'extension local
+- En T2, la tumeur apparaît en signal intermédiaire, contrastant avec l'hyposignal du stroma cervical sain
+- Elle mesure la taille tumorale, recherche l'envahissement des paramètres, du vagin, de la vessie et du rectum
+- Elle recherche également les adénopathies pelviennes et lombo-aortiques
+
+## Grossesse extra-utérine
+[[fig:echo:geu|Utérus vide, masse latéro-utérine, épanchement du cul-de-sac de Douglas.]]
+- Vacuité utérine avec un taux d'hCG au-dessus du seuil de discrimination, environ 1500 UI/L par voie endovaginale
+- Masse latéro-utérine, hématosalpinx, parfois sac gestationnel avec embryon
+- Épanchement du cul-de-sac de Douglas, témoin d'un saignement intrapéritonéal
+- Le taux d'hCG quantifie l'activité trophoblastique, l'échographie seule localise
+- Piège : sous le seuil de discrimination, l'échographie ne conclut pas ; c'est la cinétique à 48 heures qui tranche
+
+## Grossesse môlaire
+[[fig:echo:mole|Aspect vésiculaire diffus en tempête de neige, sans embryon dans la forme complète.]]
+- Aspect vésiculaire diffus, décrit comme une tempête de neige ou un nid d'abeilles
+- Absence d'embryon dans la forme complète
+- Utérus plus gros que ne le voudrait le terme
+- Kystes lutéiniques ovariens bilatéraux fréquents
+- hCG très élevées, disproportionnées par rapport au terme
+- Le suivi repose sur les hCG jusqu'à négativation complète
+
+## Hydrosalpinx
+[[fig:echo:hydrosalpinx|Structure tubulée repliée, avec cloisons incomplètes caractéristiques.]]
+- Structure tubulée, allongée, repliée sur elle-même
+- Cloisons incomplètes, qui correspondent aux replis de la trompe dilatée
+- Aspect en roue dentée sur une coupe transversale
+- Séquelle d'infection génitale haute, avec retentissement sur la fertilité
+
+## Anomalies d'insertion placentaire
+- Placenta praevia : insertion sur le segment inférieur, à distinguer selon qu'il recouvre ou non l'orifice interne
+- Le toucher vaginal est proscrit avant l'échographie devant des métrorragies du troisième trimestre
+- Placenta accreta : lacunes intra-placentaires, disparition du liseré hypoéchogène rétroplacentaire, hypervascularisation de l'interface
+- Terrain : utérus cicatriciel associé à un placenta praevia recouvrant la cicatrice
+- IRM en complément : bandes intra-placentaires en hyposignal T2, bombement du contour utérin
+- Le diagnostic anténatal change le pronostic maternel, car il permet d'organiser l'accouchement
+
+## Ce qui ne se voit pas à l'échographie
+- L'hématome rétroplacentaire est souvent invisible : le diagnostic reste clinique, devant une douleur brutale avec utérus de bois
+- Une échographie normale n'élimine jamais ce diagnostic
+- La rupture utérine sur utérus cicatriciel se reconnaît sur la clinique et le rythme cardiaque fœtal
+- La chorioamniotite est un diagnostic clinique et biologique
+
+## Les six pièges à retenir
+- Un Doppler normal n'élimine pas une torsion d'annexe
+- Un kyste hémorragique ressemble à un endométriome : c'est l'évolution qui les sépare
+- L'endométriome garde son hypersignal T1 en saturation de graisse, le dermoïde le perd
+- Un endomètre fin n'autorise pas à ignorer une récidive de métrorragies après la ménopause
+- Le taux d'hCG ne localise jamais une grossesse
+- Une échographie normale n'élimine pas un hématome rétroplacentaire`,
+  },
+
   {
     id: "ecg",
     titre: "Lire un ECG",
