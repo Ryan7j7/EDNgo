@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v95";
+const VERSION = "v99";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -2296,16 +2296,36 @@ const MODELES = [
 ];
 
 
-/* rappel LCA toutes les trois semaines */
+/* La LCA a rendez-vous chaque dimanche. Tant que la séance n'est pas cochée,
+   le retard s'accumule et reste affiché : c'est ce qui empêche de laisser filer. */
 const CLE_LCA = "edngo-lca";
-function lcaDu() {
-  try {
-    const d = localStorage.getItem(CLE_LCA);
-    if (!d) return true;
-    return (new Date(auj()) - new Date(d)) / 86400000 >= 21;
-  } catch (e) { return false; }
-}
+
+function derniereLca() { try { return localStorage.getItem(CLE_LCA) || ""; } catch (e) { return ""; } }
 function noterLca() { try { localStorage.setItem(CLE_LCA, auj()); } catch (e) {} }
+
+/* Premier dimanche strictement postérieur à une date : la prochaine échéance. */
+function dimancheApres(ref) {
+  const d = new Date(ref + "T12:00:00");
+  d.setDate(d.getDate() + (7 - d.getDay() || 7));
+  return iso(d);
+}
+
+/* Le retard s'accumule d'un dimanche à l'autre : sauter une semaine ne
+   remet pas le compteur à zéro. */
+function etatLca() {
+  const faite = derniereLca();
+  const jour = auj();
+  const ecart = (a, b) =>
+    Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
+
+  if (!faite) return { faite: "", aJour: false, jours: null, retard: null, cible: null };
+
+  const cible = dimancheApres(faite);
+  const aJour = jour < cible;
+  return { faite, aJour, jours: ecart(faite, jour), retard: aJour ? 0 : ecart(cible, jour), cible };
+}
+
+function lcaDu() { return !etatLca().aJour; }
 
 const CLE_AUTO = "edngo-auto-placement";
 
@@ -2385,21 +2405,17 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
     .filter((x) => !(x.etat === "fait" && x.date && jours(x.date, jour) > 3))
     .map((x) => (x.avenir && x.etat === "libre" ? { ...x, etat: "avenir" } : x));
 
-  const reportes = tout.filter((x) => x.etat === "libre" && (repousses[x.i.id] || "") > jour);
-  const aPlacer = tout.filter((x) => x.etat === "libre" && !((repousses[x.i.id] || "") > jour))
+  const reportes = tout.filter((x) => x.etat === "libre" && repousses[x.i.id]);
+  const aPlacer = tout.filter((x) => x.etat === "libre" && !repousses[x.i.id])
     .sort((a, b) => b.retard - a.retard);
   const planifies = tout.filter((x) => x.etat === "place").sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const semaine = tout.filter((x) => x.etat === "avenir").sort((a, b) => (a.ech || "").localeCompare(b.ech || ""));
   const faits = tout.filter((x) => x.etat === "fait").sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const enRetard = aPlacer.filter((x) => x.retard > 0).length;
 
-  /* Reporter ne supprime rien : l'item revient dans « à placer » le lendemain,
-     et reste visible entre-temps dans sa propre section. */
-  const reporter = (id) => {
-    const d = new Date(jour + "T12:00:00");
-    d.setDate(d.getDate() + 1);
-    onReporter(id, iso(d));
-  };
+  /* Mettre de côté ne supprime rien et ne revient pas tout seul : l'item reste
+     dans sa section jusqu'à ce qu'on le remette soi-même. */
+  const reporter = (id) => onReporter(id, "9999-12-31");
 
   const TON = {
     placer: { fg: "#EAAE43", bg: "#2A1F08" },
@@ -2416,7 +2432,7 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
       <div className="mb-2" style={{ background: ton.bg, borderRadius: 16, padding: "11px 12px",
         borderLeft: `5px solid ${ton.fg}`, opacity: barre ? 0.5 : 1, position: "relative" }}>
         {onReporter && (
-          <button onClick={onReporter} title="Pas aujourd'hui"
+          <button onClick={onReporter} title="Mettre de côté"
             className="doux flex items-center justify-center"
             style={{ position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: 999,
               color: T.ink2, fontSize: 13, background: "rgba(0,0,0,0.22)" }}>✕</button>
@@ -2535,10 +2551,10 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
                 } />
             ))} />
 
-          <Section cle="reporte" titre="PAS AUJOURD'HUI" n={reportes.length} ton={TON.reporte}
+          <Section cle="reporte" titre="MIS DE CÔTÉ" n={reportes.length} ton={TON.reporte}
             enfants={reportes.map((x) => (
               <Carte key={x.i.id} x={x} ton={TON.reporte}
-                repere={x.retard > 0 ? `EN ATTENTE · ${x.retard} J DE RETARD` : "EN ATTENTE"}
+                repere={x.retard > 0 ? `DE CÔTÉ · ${x.retard} J DE RETARD` : "DE CÔTÉ"}
                 bouton={
                   <button onClick={() => onReporter(x.i.id, null)} className="text-xs px-3 py-1.5 doux"
                     style={{ borderRadius: 999, border: `1px solid ${TON.reporte.fg}`,
@@ -2647,10 +2663,15 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
   };
 
   /* étirement et déplacement au doigt ou au stylet */
+  /* La capture du pointeur empêche le clic natif d'aboutir. On détecte donc
+     l'appui simple nous-mêmes : peu de déplacement et peu de temps. */
+  const tap = useRef(null);
+
   const prendre = (e, t, mode) => {
     e.stopPropagation();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) {}
     setSelection(t.id);
+    tap.current = { id: t.id, mode, x: e.clientX, y: e.clientY, t: Date.now(), tache: t };
     setGlisse({ id: t.id, mode, y0: e.clientY, debut0: t.debut, duree0: t.duree || 1 });
     setApercu({ id: t.id, debut: t.debut, duree: t.duree || 1 });
   };
@@ -2665,7 +2686,22 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
       setApercu((a) => (a && a.debut === h ? a : { id: glisse.id, debut: h, duree: glisse.duree0 }));
     }
   };
-  const lacher = () => {
+  const lacher = (e) => {
+    const p = tap.current;
+    tap.current = null;
+
+    /* appui simple sur un créneau laissé « à définir » : on ouvre la saisie */
+    if (p && p.mode === "debut" && e && Date.now() - p.t < 450
+        && Math.abs((e.clientX ?? p.x) - p.x) < 9 && Math.abs((e.clientY ?? p.y) - p.y) < 9) {
+      const t = taches.find((x) => x.id === p.id) || p.tache;
+      if (t && t.type === "perso" && t.texte === "À définir") {
+        setApercu(null); setGlisse(null);
+        setRemplace(t.id); setCreneau(t.debut);
+        setFin(t.debut + (t.duree || 1)); setTexte("");
+        return;
+      }
+    }
+
     if (apercu) modifier(apercu.id, { debut: apercu.debut, duree: apercu.duree });
     setApercu(null); setGlisse(null);
   };
@@ -2734,9 +2770,26 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
     setModeles(false);
   };
 
+  /* Sans recherche, on propose d'emblée les items qui ont le plus de sens :
+     les révisions échues d'abord, puis les items les plus fragiles. */
+  const suggestions = (() => {
+    const poses = new Set(taches.filter((t) => t.date === jour && t.itemId).map((t) => t.itemId));
+    const dus = revisionsDuJour(items, jour, 7)
+      .filter(({ i }) => !poses.has(i.id))
+      .map(({ i, retard }) => ({ i, quoi: retard > 0 ? `en retard de ${retard} j`
+        : retard === 0 ? "échu aujourd'hui" : `dans ${-retard} j` }));
+    const faibles = items
+      .filter((i) => (i.comp || 0) > 0 && (i.comp || 0) < 4 && !poses.has(i.id)
+        && !dus.some((x) => x.i.id === i.id))
+      .sort((a, b) => (a.comp || 0) - (b.comp || 0)
+        || (a.dateComp || "").localeCompare(b.dateComp || ""))
+      .map((i) => ({ i, quoi: NIVEAUX_C[Math.min(i.comp, 4)].nom.toLowerCase() }));
+    return [...dus, ...faibles].slice(0, 6);
+  })();
+
   const trouves = texte.trim()
-    ? items.filter((i) => correspond(i, texte)).slice(0, 4)
-    : [];
+    ? items.filter((i) => correspond(i, texte)).slice(0, 6).map((i) => ({ i, quoi: null }))
+    : suggestions;
 
   const dateLisible = (() => {
     const d = new Date(jour + "T12:00:00");
@@ -3090,14 +3143,6 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                   transition: enCours ? "none" : "top 140ms ease, height 140ms ease, left 140ms ease, width 140ms ease",
                 }}>
                 <div onPointerDown={(e) => { setSelection(t.id); prendre(e, t, "debut"); }}
-                  onClick={(e) => {
-                    /* un créneau laissé « à définir » s'ouvre directement en saisie */
-                    if (t.type === "perso" && t.texte === "À définir" && !glisse) {
-                      e.stopPropagation();
-                      setRemplace(t.id); setCreneau(t.debut);
-                      setFin(t.debut + (t.duree || 1)); setTexte("");
-                    }
-                  }}
                   style={{ padding: "7px 10px", height: "100%", cursor: "grab", touchAction: "none" }}>
                   <span className="flex items-start gap-2">
                     <span onPointerDown={(e) => e.stopPropagation()}
@@ -3196,18 +3241,27 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                 placeholder="Numéro d'item, mot-clé, ou autre chose…"
                 className="w-full px-3 py-2 text-sm" style={{ borderRadius: 12, border: `1px solid ${T.line}` }} />
 
-              {trouves.map((i) => {
+              {!texte.trim() && trouves.length > 0 && (
+                <p className="text-xs mt-2 mb-1" style={{ color: T.ink2 }}>Propositions</p>
+              )}
+              {trouves.map(({ i, quoi }) => {
                 const c = colleges.find((x) => x.id === i.collegeId);
                 const p = pal(c ? c.nom : "");
+                const N = NIVEAUX_C[Math.min(i.comp || 0, 4)];
                 return (
                   <button key={i.id} onClick={() => ajouter("item", i.id)}
                     className="w-full text-left flex items-center gap-2 doux mt-1"
-                    style={{ background: T.card, borderRadius: 10, padding: "7px 9px" }}>
+                    style={{ background: T.card, borderRadius: 10, padding: "8px 9px" }}>
+                    <span className="shrink-0" style={{ width: 4, height: 28, borderRadius: 999, background: N.bord }} />
                     <span className="shrink-0 flex items-center justify-center"
-                      style={{ width: 26, height: 26, borderRadius: 999, background: p.bg, color: p.fg, fontSize: 10, fontWeight: 700 }}>
+                      style={{ minWidth: 30, height: 26, padding: "0 6px", borderRadius: 8,
+                        background: p.bg, color: p.fg, fontSize: 11, fontWeight: 800 }}>
                       {i.numero}
                     </span>
-                    <span className="flex-1 min-w-0 text-xs truncate">{i.titre}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs truncate">{i.titre}</span>
+                      {quoi && <span className="block text-xs" style={{ color: N.bord, fontWeight: 600 }}>{quoi}</span>}
+                    </span>
                   </button>
                 );
               })}
@@ -5077,7 +5131,21 @@ function App() {
   const [pret, setPret] = useState(false);
   const [alerte, setAlerte] = useState(null);
 
-  const [vue, setVue] = useState("accueil"); // accueil | grille | colleges | erreurs
+  const [vue, setVue] = useState("accueil");
+
+  /* Historique des onglets visités, pour que la flèche revienne d'où l'on vient. */
+  const pile = useRef([]);
+  const horsPile = useRef(false);
+  const vuePrec = useRef("accueil");
+  useEffect(() => {
+    if (vue === vuePrec.current) return;
+    if (horsPile.current) horsPile.current = false;
+    else {
+      pile.current.push(vuePrec.current);
+      if (pile.current.length > 30) pile.current.shift();
+    }
+    vuePrec.current = vue;
+  }, [vue]); // accueil | grille | colleges | erreurs
   const [collegeId, setCollegeId] = useState(null);
   const [itemId, setItemId] = useState(null);
   const [session, setSession] = useState(null);
@@ -5440,11 +5508,18 @@ function App() {
 
   if (!pret) return <div className="flex items-center justify-center h-screen" style={{ color: T.ink2 }}>Ouverture…</div>;
 
+  /* Le retour remonte l'historique réel : d'abord la profondeur dans un item,
+     puis l'onglet d'où l'on vient. On ne repart à l'accueil qu'en dernier. */
   const retour = () => {
     if (session) return setSession(null);
-    if (item) setItemId(null);
-    else if (college) setCollegeId(null);
-    else if (vue !== "accueil") setVue("accueil");
+    if (item) return setItemId(null);
+    if (college) return setCollegeId(null);
+    const h = pile.current;
+    while (h.length) {
+      const p = h.pop();
+      if (p && p !== vue) { horsPile.current = true; return setVue(p); }
+    }
+    if (vue !== "accueil") setVue("accueil");
   };
 
   return (
@@ -5689,6 +5764,14 @@ function App() {
             taches={taches} onTaches={majTaches} onPlanning={() => setVue("todo")}
             onComprendre={(id, v) => definirComp(id, v)}
             onNoteItem={(id, txt) => setItems((l) => l.map((i) => i.id === id ? { ...i, note: txt } : i))}
+            notesJour={notesJour}
+            onNoteJour={(j, v) => setNotesJour((n) => ({ ...n, [j]: v }))}
+            repousses={repousses}
+            onReporter={(id, d) => setRepousses((r) => {
+              const c = { ...r };
+              if (d) c[id] = d; else delete c[id];
+              return c;
+            })}
             onOuvrirItem={(id) => { const it = items.find((x) => x.id === id); setVue("colleges"); setCollegeId(it.collegeId); setItemId(id); }}
             testes={testes} solides={solides} jours={resultats7}
             nbExos={cartes.length + qcms.length} nbAnnales={annales.length}
@@ -5839,11 +5922,18 @@ function Selecteur({ items, colleges, cartes, qcms, onLancer, onFermer }) {
 function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, onOuvrirItem,
   testes, solides, jours, nbExos, nbAnnales, onSession, onSessionCollege, revision, onRevision,
   rattrapage, onRattrapage, onGrille, onExporter, onImporter, onLancerPaquet, place, poidsAffiche,
-  onComprendre, onNoteItem }) {
-  const [lca, setLca] = useState(false);
-  useEffect(() => { setLca(lcaDu()); }, []);
-  const onLca = () => { noterLca(); setLca(false); };
+  onComprendre, onNoteItem, notesJour, onNoteJour, repousses, onReporter }) {
   const [rappel, setRappel] = useState(false);
+  const [tic, setTic] = useState(0);
+
+  /* Le panneau d'avis se referme pour la journée, pas définitivement. */
+  const [avisFerme, setAvisFermeBrut] = useState(() => {
+    try { return localStorage.getItem("edngo-avis") === auj(); } catch (e) { return false; }
+  });
+  const setAvisFerme = (v) => {
+    setAvisFermeBrut(v);
+    try { v ? localStorage.setItem("edngo-avis", auj()) : localStorage.removeItem("edngo-avis"); } catch (e) {}
+  };
   const [selecteur, setSelecteur] = useState(null);
   useEffect(() => {
     try {
@@ -5871,9 +5961,92 @@ function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, 
 
   return (
     <div>
-      <JourneeAccueil taches={taches} onMaj={onTaches} items={items} colleges={colleges}
-        onOuvrirItem={onOuvrirItem} onPlanning={onPlanning}
-        onComprendre={onComprendre} onNote={onNoteItem} />
+      {(() => {
+        /* Ce qui appelle une action aujourd'hui, réuni en un seul endroit,
+           affiché à l'ouverture et refermable pour la journée. */
+        if (avisFerme) return null;
+        const avis = [];
+
+        const dus = revisionsDuJour(items, auj(), 0)
+          .filter(({ i }) => !repousses[i.id]
+            && !taches.some((t) => t.itemId === i.id && (t.date || "") >= (i.dateComp || "")));
+        const retard = dus.filter((x) => x.retard > 0).length;
+        if (dus.length) avis.push({
+          ic: "◔", ton: T.moyen,
+          titre: `${dus.length} révision${dus.length > 1 ? "s" : ""} à placer`,
+          detail: retard ? `dont ${retard} en retard` : "échues aujourd'hui",
+          action: null,
+        });
+
+        const L = etatLca();
+        if (!L.aJour) avis.push({
+          ic: "◫", ton: L.retard >= 7 ? T.bas : L.retard > 0 ? T.moyen : "#7FD8D0",
+          titre: L.retard > 0
+            ? `LCA en retard de ${L.retard} jour${L.retard > 1 ? "s" : ""}`
+            : "Lecture critique d'article",
+          detail: L.faite
+            ? `Dernière séance il y a ${L.jours} jour${L.jours > 1 ? "s" : ""} · rendez-vous chaque dimanche`
+            : "Aucune séance enregistrée · rendez-vous chaque dimanche",
+          action: { l: "C'est fait", f: () => { noterLca(); setTic((n) => n + 1); } },
+        });
+
+        if (rattrapage) avis.push({
+          ic: "❋", ton: "#B48CC9", titre: "Rattrapage transversal",
+          detail: "C'est le jour de la séance de rattrapage",
+          action: { l: "Lancer", f: onRattrapage },
+        });
+
+        if (rappel) avis.push({
+          ic: "⤓", ton: T.bas, titre: "Sauvegarde",
+          detail: "Aucun export depuis plus de sept jours",
+          action: { l: "Exporter", f: () => { onExporter();
+            try { localStorage.setItem("edngo-sauvegarde", auj()); } catch (e) {}
+            setRappel(false); } },
+        });
+
+        if (!avis.length) return null;
+
+        return (
+          <div className="ombre mb-4 vue" style={{ background: T.card, borderRadius: 22, padding: "15px 16px" }}>
+            <div className="flex items-baseline justify-between mb-3">
+              <span style={{ fontFamily: serif, fontSize: 18 }}>
+                {avis.length === 1 ? "Un point à traiter" : `${avis.length} points à traiter`}
+              </span>
+              <button onClick={() => setAvisFerme(true)} className="text-sm px-2" style={{ color: T.ink2 }}>✕</button>
+            </div>
+            {avis.map((a, k) => (
+              <div key={k} className="flex items-center gap-3" style={{
+                background: T.paper, borderRadius: 14, padding: "11px 13px",
+                marginBottom: k < avis.length - 1 ? 8 : 0,
+                borderLeft: `4px solid ${a.ton}` }}>
+                <span className="shrink-0 flex items-center justify-center"
+                  style={{ width: 32, height: 32, borderRadius: 999, background: a.ton,
+                    color: "#0E1A29", fontSize: 15, fontWeight: 800 }}>{a.ic}</span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm" style={{ fontWeight: 700, lineHeight: 1.3 }}>{a.titre}</span>
+                  <span className="block text-xs mt-0.5" style={{ color: T.ink2 }}>{a.detail}</span>
+                </span>
+                {a.action && (
+                  <button onClick={a.action.f} className="shrink-0 text-xs px-3 py-1.5 doux"
+                    style={{ borderRadius: 999, background: a.ton, color: "#0E1A29", fontWeight: 700 }}>
+                    {a.action.l}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* Le planning complet, pas une version réduite : tout ce qui est
+          possible dans l'onglet À faire l'est aussi depuis l'accueil. */}
+      <div className="mb-4">
+        <Planning taches={taches} onMaj={onTaches} items={items} colleges={colleges}
+          onOuvrirItem={onOuvrirItem}
+          onComprendre={onComprendre} onNote={onNoteItem}
+          notesJour={notesJour} onNoteJour={onNoteJour}
+          repousses={repousses} onReporter={onReporter} />
+      </div>
 
       {/* barre de progression, unique et reactive */}
       <div className="p-5 mb-4 ombre" style={{ background: T.card, borderRadius: 24 }}>
@@ -5936,23 +6109,7 @@ function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, 
           onLancer={(p) => { setSelecteur(null); onLancerPaquet(p); }} onFermer={() => setSelecteur(null)} />
       )}
 
-      {lca && (
-        <div className="w-full flex items-center gap-3 p-4 mb-3 mt-5"
-          style={{ background: NIV[2].doux, borderRadius: 22 }}>
-          <span style={{ fontSize: 18 }}>✦</span>
-          <span className="flex-1 min-w-0">
-            <span className="block text-sm" style={{ fontWeight: 700, color: NIV[2].encre }}>Séance de LCA</span>
-            <span className="block text-xs mt-0.5" style={{ color: NIV[2].encre, opacity: 0.85 }}>
-              Trois semaines sans lecture critique · un article suffit
-            </span>
-          </span>
-          <button onClick={onLca} className="px-4 py-2 text-xs doux shrink-0"
-            style={{ background: NIV[2].encre, color: "#241A03", borderRadius: 999, fontWeight: 700 }}>
-            C'est fait
-          </button>
-        </div>
-      )}
-
+      
       {rattrapage && rattrapage.dispo && (
         <button onClick={onRattrapage} className="w-full text-left p-4 mb-3 mt-5 doux"
           style={{
