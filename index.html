@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v101";
+const VERSION = "v102";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -2699,7 +2699,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
     const nouveau = {
       id: Math.random().toString(36).slice(2, 9), date: jour, type,
       itemId: itemId || null, texte: libelle || "",
-      debut: creneau, duree: Math.max(1, fin - creneau), fait: false, teinte: taches.length % BLOCS.length,
+      debut: creneau, duree: Math.max(0.5, fin - creneau), fait: false, teinte: taches.length % BLOCS.length,
     };
     /* si l'on remplit un créneau « à définir », on le remplace au lieu d'empiler */
     if (remplace) {
@@ -3281,15 +3281,21 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
               }}>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs shrink-0" style={{ color: T.accent, fontWeight: 700 }}>
-                  {String(creneau).padStart(2, "0")}:00
+                  {hFmt(creneau)}
                 </span>
                 <span className="text-xs shrink-0" style={{ color: T.ink2 }}>→</span>
                 <select value={fin} onChange={(e) => setFin(Number(e.target.value))}
                   className="text-xs px-2 py-1 shrink-0"
                   style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.accent, fontWeight: 700 }}>
-                  {[...Array(24 - creneau)].map((_, k) => (
-                    <option key={k} value={creneau + k + 1}>{String(creneau + k + 1).padStart(2, "0")}:00</option>
-                  ))}
+                  {(() => {
+                    /* Pas d'une demi-heure : les modèles posent des créneaux
+                       à 10h30 ou 17h30, et Array() n'accepte pas 6,5. */
+                    const opts = [];
+                    for (let h = creneau + 0.5; h <= 24; h += 0.5) opts.push(h);
+                    return opts.map((h) => (
+                      <option key={h} value={h}>{hFmt(h)}</option>
+                    ));
+                  })()}
                 </select>
                 <div className="flex-1" />
                 <button onClick={() => { setCreneau(null); setTexte(""); setRemplace(null); }} className="px-1 text-sm" style={{ color: T.ink2 }}>×</button>
