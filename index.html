@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v99";
+const VERSION = "v101";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -2349,6 +2349,33 @@ function ajoutRevision(taches, i, jour) {
   }];
 }
 
+/* Calendrier des examens de collège, DFASM 2026-2027, UFR Simone Veil.
+   Relevé sur les cases vertes du calendrier étudiant. */
+const EXAMENS = [
+  ["2026-09-10", "2026-09-11", "Gynécologie-obstétrique"],
+  ["2026-09-24", "2026-09-25", "ORL et chirurgie maxillo-faciale"],
+  ["2026-10-08", "2026-10-09", "Cardiologie"],
+  ["2026-11-05", "2026-11-05", "Pneumologie"],
+  ["2026-11-19", "2026-11-20", "Hépato-gastro-entérologie"],
+  ["2027-01-14", "2027-01-15", "Neurologie"],
+  ["2027-01-28", "2027-01-29", "Psychiatrie et addictologie"],
+  ["2027-02-25", "2027-02-26", "Hématologie"],
+  ["2027-03-11", "2027-03-12", "Endocrinologie et nutrition"],
+  ["2027-03-24", "2027-03-25", "Rhumatologie"],
+  ["2027-03-26", "2027-03-26", "Orthopédie et traumatologie"],
+  ["2027-04-22", "2027-04-23", "Pédiatrie"],
+];
+
+/* Le prochain examen : celui dont la dernière épreuve n'est pas passée. */
+function prochainExamen(jour) {
+  const j = jour || auj();
+  const e = EXAMENS.find(([, fin]) => fin >= j);
+  if (!e) return null;
+  const [debut, fin, college] = e;
+  const dans = Math.round((new Date(debut + "T12:00:00") - new Date(j + "T12:00:00")) / 86400000);
+  return { debut, fin, college, dans, encours: j >= debut && j <= fin };
+}
+
 /* Items dont la révision arrive à échéance : calculée depuis la compréhension
    que tu as choisie dans la grille, sans rien saisir à la main. */
 /* Révisions échues au jour donné. Avec un horizon, on remonte aussi celles
@@ -2374,7 +2401,16 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
   const [ouvertes, setOuvertes] = useState({ placer: true, planifie: true, semaine: false, reporte: false, fait: false });
   const basculer = (k) => setOuvertes((o) => ({ ...o, [k]: !o[k] }));
 
-  const due = revisionsDuJour(items, jour, 7);
+  const exam = prochainExamen(jour);
+  const [tousColleges, setTousColleges] = useState(false);
+  const colExam = exam ? colleges.find((c) => c.nom === exam.college) : null;
+
+  /* Tant qu'un examen approche, la colonne ne montre que les items de ce
+     collège : mélanger vingt-quatre collèges rendrait la révision ingérable. */
+  const due = (() => {
+    const brut = revisionsDuJour(items, jour, 7);
+    return (!colExam || tousColleges) ? brut : brut.filter(({ i }) => i.collegeId === colExam.id);
+  })();
 
   const jours = (a, b) =>
     Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
@@ -2490,6 +2526,31 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
 
   return (
     <div className="ombre" style={{ background: T.card, borderRadius: 22, padding: "15px 15px 13px" }}>
+      {exam && colExam && (
+        <div className="mb-3" style={{ background: pal(exam.college).bg, borderRadius: 16,
+          padding: "11px 13px", borderLeft: `5px solid ${pal(exam.college).fg}` }}>
+          <div className="flex items-baseline justify-between mb-1">
+            <span className="text-xs uppercase" style={{ letterSpacing: "0.09em",
+              color: pal(exam.college).fg, fontWeight: 800 }}>
+              {exam.encours ? "Examen en cours"
+                : exam.dans === 0 ? "Examen aujourd'hui"
+                : exam.dans === 1 ? "Examen demain"
+                : `Examen dans ${exam.dans} jours`}
+            </span>
+            <span className="text-xs" style={{ color: pal(exam.college).fg, opacity: 0.8 }}>
+              {dCourte(exam.debut)}{exam.fin !== exam.debut ? ` – ${dCourte(exam.fin)}` : ""}
+            </span>
+          </div>
+          <p style={{ fontSize: 15.5, fontWeight: 700, color: pal(exam.college).fg, lineHeight: 1.3 }}>
+            {exam.college}
+          </p>
+          <button onClick={() => setTousColleges(!tousColleges)} className="text-xs mt-2 doux"
+            style={{ color: pal(exam.college).fg, opacity: 0.85, textDecoration: "underline" }}>
+            {tousColleges ? "Se recentrer sur ce collège" : "Voir tous les collèges"}
+          </button>
+        </div>
+      )}
+
       <div className="mb-3" style={{ background: aPlacer.length ? TON.placer.bg : TON.fait.bg,
         borderRadius: 16, padding: "13px 14px" }}>
         <p style={{ fontFamily: serif, fontSize: 26, lineHeight: 1.1,
@@ -2505,8 +2566,9 @@ function ColonneRevisions({ items, colleges, jour, taches, onPoser, onOuvrirItem
 
       {vide ? (
         <p className="text-xs py-2" style={{ color: T.ink2, lineHeight: 1.6 }}>
-          Rien à réviser cette semaine. Colore des items dans la grille :
-          leur date de révision se calcule toute seule.
+          {colExam && !tousColleges
+            ? `Rien à réviser en ${exam.college} cette semaine. Colore des items de ce collège dans la grille, ou affiche tous les collèges ci-dessus.`
+            : "Rien à réviser cette semaine. Colore des items dans la grille : leur date de révision se calcule toute seule."}
         </p>
       ) : (
         <div style={{ maxHeight: "56vh", overflowY: "auto" }}>
@@ -5966,6 +6028,22 @@ function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, 
            affiché à l'ouverture et refermable pour la journée. */
         if (avisFerme) return null;
         const avis = [];
+
+        /* Le prochain examen passe avant tout le reste. */
+        const ex = prochainExamen(auj());
+        if (ex) {
+          const p = pal(ex.college);
+          avis.push({
+            ic: "✦", ton: p.fg,
+            titre: ex.encours ? `${ex.college} — épreuve en cours`
+              : ex.dans === 0 ? `${ex.college} — c'est aujourd'hui`
+              : ex.dans === 1 ? `${ex.college} — c'est demain`
+              : `${ex.college} dans ${ex.dans} jours`,
+            detail: `${dCourte(ex.debut)}${ex.fin !== ex.debut ? " – " + dCourte(ex.fin) : ""}`
+              + ` · les révisions sont centrées sur ce collège`,
+            action: { l: "Réviser", f: onPlanning },
+          });
+        }
 
         const dus = revisionsDuJour(items, auj(), 0)
           .filter(({ i }) => !repousses[i.id]
