@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v102";
+const VERSION = "v103";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -2299,6 +2299,7 @@ const MODELES = [
 /* La LCA a rendez-vous chaque dimanche. Tant que la séance n'est pas cochée,
    le retard s'accumule et reste affiché : c'est ce qui empêche de laisser filer. */
 const CLE_LCA = "edngo-lca";
+const CLE_CARNET = "edngo-carnet-cartes";
 
 function derniereLca() { try { return localStorage.getItem(CLE_LCA) || ""; } catch (e) { return ""; } }
 function noterLca() { try { localStorage.setItem(CLE_LCA, auj()); } catch (e) {} }
@@ -3846,6 +3847,28 @@ async function demanderIA(systeme, message, maxJetons = 4000) {
   if (d.error) throw new Error(d.error.message || "Réponse refusée");
   return (d.content || []).filter((x) => x.type === "text").map((x) => x.text).join("\n");
 }
+
+/* Transforme les entrées du carnet en flashcards. La consigne insiste sur le
+   point délicat : interroger la BONNE réponse, pas la faute commise, sinon la
+   carte réancre l'erreur au lieu de la corriger. */
+const CONSIGNE_CARNET = `Tu es enseignant de médecine et tu prépares un étudiant aux EDN en France.
+On te donne des erreurs et des mémos qu'il a notés lui-même, souvent en style télégraphique.
+
+Transforme chaque entrée en une flashcard.
+
+Règles impératives :
+- La question doit porter sur la connaissance correcte, jamais sur l'erreur commise.
+  Ne demande jamais « quelle erreur ai-je faite » ni « vrai ou faux ».
+- Formule une question fermée à réponse précise, que l'on peut se réciter.
+- La réponse tient en une à trois lignes, sans délayage.
+- Si l'entrée contient un piège ou une confusion entre deux notions, construis la
+  carte sur la distinction elle-même.
+- Si une entrée est trop vague pour donner une carte utile, ignore-la.
+- N'invente aucun chiffre, seuil ou posologie absent de l'entrée.
+- Une entrée peut donner deux cartes si elle contient deux notions distinctes.
+
+Réponds uniquement par un tableau JSON, sans texte autour, sans balises de code :
+[{"source": <index de l'entrée>, "recto": "...", "verso": "..."}]`;
 
 function extraireJson(txt) {
   let t = (txt || "").trim().replace(/^```(json)?/i, "").replace(/```$/, "").trim();
@@ -5822,6 +5845,11 @@ function App() {
             cartes={cartes} qcms={qcms} seances={seances} />
         ) : vue === "erreurs" ? (
           <Erreurs erreurs={erreurs} items={items} colleges={colleges}
+            onCartes={(nouvelles, ids) => {
+              setCartes((l) => [...l, ...nouvelles.map((c) => ({ ...c, id: uid() }))]);
+              setErreurs((l) => l.map((e) => ids.includes(e.id) ? { ...e, carteFaite: auj() } : e));
+              try { localStorage.setItem(CLE_CARNET, auj()); } catch (x) {}
+            }}
             onModifier={(id, texte) => setErreurs((l) => l.map((e) => e.id === id ? { ...e, texte } : e))}
             onBasculer={(id, genre) => setErreurs((l) => l.map((e) => e.id === id ? { ...e, genre } : e))}
             onAjouter={(texte, itemId, genre) => setErreurs((l) => [{ id: uid(), texte, itemId, genre: genre || "erreur", date: auj() }, ...l])}
@@ -5831,6 +5859,7 @@ function App() {
           <Accueil items={items} colleges={colleges} cartes={cartes} qcms={qcms}
             taches={taches} onTaches={majTaches} onPlanning={() => setVue("todo")}
             onComprendre={(id, v) => definirComp(id, v)}
+            onVue={setVue}
             onNoteItem={(id, txt) => setItems((l) => l.map((i) => i.id === id ? { ...i, note: txt } : i))}
             notesJour={notesJour}
             onNoteJour={(j, v) => setNotesJour((n) => ({ ...n, [j]: v }))}
@@ -5990,7 +6019,7 @@ function Selecteur({ items, colleges, cartes, qcms, onLancer, onFermer }) {
 function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, onOuvrirItem,
   testes, solides, jours, nbExos, nbAnnales, onSession, onSessionCollege, revision, onRevision,
   rattrapage, onRattrapage, onGrille, onExporter, onImporter, onLancerPaquet, place, poidsAffiche,
-  onComprendre, onNoteItem, notesJour, onNoteJour, repousses, onReporter }) {
+  onComprendre, onNoteItem, notesJour, onNoteJour, repousses, onReporter, onVue }) {
   const [rappel, setRappel] = useState(false);
   const [tic, setTic] = useState(0);
 
@@ -6050,6 +6079,22 @@ function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, 
             action: { l: "Réviser", f: onPlanning },
           });
         }
+
+        /* Rappel hebdomadaire : transformer les erreurs accumulées en cartes. */
+        const neuves = erreurs.filter((e) => !e.carteFaite && (e.texte || e.qcm)).length;
+        let derniereSerie = "";
+        try { derniereSerie = localStorage.getItem(CLE_CARNET) || ""; } catch (x) {}
+        const joursSerie = derniereSerie
+          ? Math.round((new Date(auj() + "T12:00:00") - new Date(derniereSerie + "T12:00:00")) / 86400000)
+          : null;
+        if (neuves && (joursSerie === null || joursSerie >= 7)) avis.push({
+          ic: "✎", ton: "#8DD16A",
+          titre: `${neuves} erreur${neuves > 1 ? "s" : ""} à transformer en flashcards`,
+          detail: derniereSerie
+            ? `Dernière série il y a ${joursSerie} jours`
+            : "Aucune série créée pour l'instant",
+          action: { l: "Ouvrir le carnet", f: () => onVue("erreurs") },
+        });
 
         const dus = revisionsDuJour(items, auj(), 0)
           .filter(({ i }) => !repousses[i.id]
@@ -8465,7 +8510,7 @@ function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colD
   );
 }
 
-function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, onSupprimer, onOuvrir }) {
+function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, onSupprimer, onOuvrir, onCartes }) {
   const [section, setSection] = useState("erreurs");
   const [texte, setTexte] = useState("");
   const [rech, setRech] = useState("");
@@ -8475,6 +8520,10 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
   const [brouillon, setBrouillon] = useState("");
   const [envoi, setEnvoi] = useState(null);
   const [vueCahier, setVueCahier] = useState(false);
+  const [travail, setTravail] = useState(false);
+
+  /* Entrées qui n'ont pas encore donné de flashcard. */
+  const aConvertir = erreurs.filter((e) => !e.carteFaite && (e.texte || e.qcm));
   const [aRanger, setARanger] = useState(null);
 
   /* Une entrée appartient aux erreurs si c'est un QCM raté ou si elle a été
@@ -8660,7 +8709,67 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
                 Copier
               </button>
             </div>
-            {envoi && (
+            <div style={{ borderTop: `1px solid ${T.line}`, marginTop: 12, paddingTop: 12 }}>
+              <p className="text-xs mb-2" style={{ color: T.ink2, lineHeight: 1.6 }}>
+                {aConvertir.length
+                  ? `${aConvertir.length} entrée${aConvertir.length > 1 ? "s" : ""} pas encore transformée${aConvertir.length > 1 ? "s" : ""} en flashcards.`
+                  : "Toutes tes entrées ont déjà leur flashcard."}
+              </p>
+              <button disabled={!aConvertir.length || travail}
+                onClick={async () => {
+                  setTravail(true); setEnvoi(null);
+                  try {
+                    const liste = aConvertir.map((e, k) => {
+                      const it = items.find((i) => i.id === e.itemId);
+                      const entete = it ? `[item ${it.numero} — ${it.titre}] ` : "";
+                      if (e.qcm) {
+                        const bonnes = (e.qcm.props || []).filter((p) => p.vrai).map((p) => p.txt);
+                        const ratees = (e.qcm.props || []).filter((p) => p.vrai !== p.coche).map((p) => p.txt);
+                        return `${k}. ${entete}QCM raté : ${e.qcm.enonce}\n`
+                          + `Réponses correctes : ${bonnes.join(" | ")}\n`
+                          + `Ce qu'il a manqué : ${ratees.join(" | ")}`
+                          + (e.qcm.explication ? `\nRaisonnement : ${e.qcm.explication}` : "");
+                      }
+                      return `${k}. ${entete}${e.texte}`;
+                    }).join("\n\n");
+
+                    const rep = await demanderIA(CONSIGNE_CARNET, liste, 6000);
+                    const cartes = extraireJson(rep);
+                    if (!Array.isArray(cartes) || !cartes.length) throw new Error("Aucune carte produite");
+
+                    const nouvelles = cartes
+                      .filter((c) => c && c.recto && c.verso)
+                      .map((c) => {
+                        const src = aConvertir[Number(c.source)] || aConvertir[0];
+                        return { recto: String(c.recto), verso: String(c.verso),
+                          itemId: src ? src.itemId || null : null, origine: "carnet" };
+                      });
+                    onCartes(nouvelles, aConvertir.map((e) => e.id));
+                    setEnvoi("cartes:" + nouvelles.length);
+                  } catch (e) {
+                    setEnvoi(String(e.message) === "PAS_DE_CLE" ? "sanscle" : "echec");
+                  }
+                  setTravail(false);
+                }}
+                className="px-4 py-2.5 text-xs doux"
+                style={{ borderRadius: 999, fontWeight: 700,
+                  background: aConvertir.length && !travail ? T.haut : "#24384F",
+                  color: aConvertir.length && !travail ? "#0E1A29" : T.ink2 }}>
+                {travail ? "Création en cours…" : "Créer les flashcards"}
+              </button>
+            </div>
+
+            {envoi && String(envoi).startsWith("cartes:") && (
+              <p className="text-xs mt-2 vue" style={{ color: T.haut, fontWeight: 600 }}>
+                {envoi.slice(7)} flashcard(s) créée(s). Tu les retrouves dans l'onglet Exercice.
+              </p>
+            )}
+            {envoi === "sanscle" && (
+              <p className="text-xs mt-2 vue" style={{ color: T.bas, fontWeight: 600 }}>
+                Renseigne ta clé API dans l'onglet My AI pour utiliser cette fonction.
+              </p>
+            )}
+            {envoi && !String(envoi).startsWith("cartes:") && envoi !== "sanscle" && (
               <p className="text-xs mt-2 vue" style={{ color: envoi === "echec" ? T.bas : T.haut, fontWeight: 600 }}>
                 {envoi === "partage" ? "Envoyé. Choisis Notes dans la liste."
                   : envoi === "copie" ? "Texte copié. Ouvre Notes et colle."
