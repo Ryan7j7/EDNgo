@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v103";
+const VERSION = "v104";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -5859,7 +5859,7 @@ function App() {
           <Accueil items={items} colleges={colleges} cartes={cartes} qcms={qcms}
             taches={taches} onTaches={majTaches} onPlanning={() => setVue("todo")}
             onComprendre={(id, v) => definirComp(id, v)}
-            onVue={setVue}
+            onVue={setVue} erreurs={erreurs}
             onNoteItem={(id, txt) => setItems((l) => l.map((i) => i.id === id ? { ...i, note: txt } : i))}
             notesJour={notesJour}
             onNoteJour={(j, v) => setNotesJour((n) => ({ ...n, [j]: v }))}
@@ -6019,7 +6019,7 @@ function Selecteur({ items, colleges, cartes, qcms, onLancer, onFermer }) {
 function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, onOuvrirItem,
   testes, solides, jours, nbExos, nbAnnales, onSession, onSessionCollege, revision, onRevision,
   rattrapage, onRattrapage, onGrille, onExporter, onImporter, onLancerPaquet, place, poidsAffiche,
-  onComprendre, onNoteItem, notesJour, onNoteJour, repousses, onReporter, onVue }) {
+  onComprendre, onNoteItem, notesJour, onNoteJour, repousses, onReporter, onVue, erreurs = [] }) {
   const [rappel, setRappel] = useState(false);
   const [tic, setTic] = useState(0);
 
