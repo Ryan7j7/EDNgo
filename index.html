@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v104";
+const VERSION = "v106";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -5215,6 +5215,7 @@ function App() {
   const [seances, setSeances] = useState([]);
   const [notesJour, setNotesJour] = useState({});
   const [repousses, setRepousses] = useState({});
+  const [cartesCarnet, setCartesCarnet] = useState([]);
   const [echec, setEchec] = useState(false);
   const [poids, setPoids] = useState(0);
   const [place, setPlace] = useState(null);
@@ -5268,6 +5269,7 @@ function App() {
         setSeances(d.seances || []);
         setNotesJour(d.notesJour || {});
         setRepousses(d.repousses || {});
+        setCartesCarnet(d.cartesCarnet || []);
       } catch {
         try { /* reprise de l'ancienne version */
           const v = JSON.parse((await window.storage.get(KEY_ANCIEN)).value);
@@ -5369,7 +5371,7 @@ function App() {
       try { await poserLourd("fiches", fiches); } catch (e) { fichesOk = false; }
 
       const donnees = JSON.stringify({ colleges, items, cartes, qcms, annales, resultats,
-        erreurs, cours, taches, dossiers, seances, notesJour, repousses, fiches: [] });
+        erreurs, cours, taches, dossiers, seances, notesJour, repousses, cartesCarnet, fiches: [] });
       setPoids(donnees.length);
       try {
         await window.storage.set(KEY, donnees);
@@ -5385,7 +5387,7 @@ function App() {
       }
     }, 500);
     return () => clearTimeout(t);
-  }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances, notesJour, repousses, pret]);
+  }, [colleges, items, cartes, qcms, annales, resultats, erreurs, cours, fiches, taches, dossiers, seances, notesJour, repousses, cartesCarnet, pret]);
 
   /* mesure du temps passé entre deux réponses, plafonné pour ignorer les pauses */
   const horlogeRep = useRef(Date.now());
@@ -5514,7 +5516,7 @@ function App() {
 
   const exporter = () => {
     const b = new Blob([JSON.stringify({ colleges, items, cartes, qcms, annales, resultats,
-      erreurs, cours, fiches, taches, dossiers, seances, notesJour, repousses }, null, 2)], { type: "application/json" });
+      erreurs, cours, fiches, taches, dossiers, seances, notesJour, repousses, cartesCarnet }, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b); a.download = `edn-go-${VERSION}-${auj()}.json`; a.click();
     URL.revokeObjectURL(a.href);
@@ -5539,11 +5541,13 @@ function App() {
           if (d.seances) setSeances(d.seances);
           if (d.notesJour) setNotesJour(d.notesJour);
           if (d.repousses) setRepousses(d.repousses);
+          if (d.cartesCarnet) setCartesCarnet(d.cartesCarnet);
           setAlerte(`Sauvegarde restaurée : ${(d.items || []).length} items, ${(d.qcms || []).length} QCM, `
             + `${(d.cartes || []).length} flashcards, ${(d.fiches || []).length} fiche(s). Les PDF ne sont pas dans l'export.`);
           return;
         }
-        const lot = Array.isArray(d) ? { resumes: d } : (d.resumes || d.flashcards || d.qcms) ? d : null;
+        const lot = Array.isArray(d) ? { resumes: d }
+          : (d.resumes || d.flashcards || d.qcms || d.cartesCarnet) ? d : null;
         if (lot) {
           const parNum = {};
           items.forEach((i) => (parNum[i.numero] = i.id));
@@ -5585,7 +5589,23 @@ function App() {
             if (nv.length) setQcms((l) => [...l, ...nv]);
           }
 
+          /* Lot destiné au carnet : ces cartes y restent et ne rejoignent pas
+             les banques des items. */
+          let ncar = 0;
+          if (Array.isArray(lot.cartesCarnet)) {
+            const nv = [];
+            lot.cartesCarnet.forEach((c) => {
+              if (!c || !c.recto || !c.verso) return;
+              if (cartesCarnet.some((x) => x.recto === c.recto) || nv.some((x) => x.recto === c.recto)) {
+                doublons++; return;
+              }
+              nv.push({ id: uid(), recto: c.recto, verso: c.verso, date: auj() }); ncar++;
+            });
+            if (nv.length) setCartesCarnet((l) => [...l, ...nv]);
+          }
+
           let msg = `Importé : ${nr} résumé(s), ${nf} flashcard(s), ${nq} QCM.`;
+          if (ncar) msg += ` ${ncar} carte(s) dans le carnet d'erreurs.`;
           if (doublons) msg += ` ${doublons} doublon(s) ignoré(s).`;
           if (orphelins.size) msg += ` Items introuvables : ${[...orphelins].join(", ")}.`;
           setAlerte(msg);
@@ -5845,8 +5865,12 @@ function App() {
             cartes={cartes} qcms={qcms} seances={seances} />
         ) : vue === "erreurs" ? (
           <Erreurs erreurs={erreurs} items={items} colleges={colleges}
+            cartesCarnet={cartesCarnet}
+            onNoterCarnet={(id, ok) => setCartesCarnet((l) => l.map((c) => c.id === id
+              ? { ...c, vues: (c.vues || 0) + 1, reussies: (c.reussies || 0) + (ok ? 1 : 0), derniere: auj() }
+              : c))}
             onCartes={(nouvelles, ids) => {
-              setCartes((l) => [...l, ...nouvelles.map((c) => ({ ...c, id: uid() }))]);
+              setCartesCarnet((l) => [...l, ...nouvelles.map((c) => ({ ...c, id: uid(), date: auj() }))]);
               setErreurs((l) => l.map((e) => ids.includes(e.id) ? { ...e, carteFaite: auj() } : e));
               try { localStorage.setItem(CLE_CARNET, auj()); } catch (x) {}
             }}
@@ -8510,7 +8534,7 @@ function Carnet({ paquets, cles, items, colleges, onOuvrir, groupe, itemDe, colD
   );
 }
 
-function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, onSupprimer, onOuvrir, onCartes }) {
+function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, onSupprimer, onOuvrir, onCartes, cartesCarnet = [], onNoterCarnet }) {
   const [section, setSection] = useState("erreurs");
   const [texte, setTexte] = useState("");
   const [rech, setRech] = useState("");
@@ -8519,7 +8543,10 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
   const [edite, setEdite] = useState(null);
   const [brouillon, setBrouillon] = useState("");
   const [envoi, setEnvoi] = useState(null);
-  const [vueCahier, setVueCahier] = useState(false);
+  const [mode, setMode] = useState("liste");
+  const vueCahier = mode === "cahier";
+  const [nCarte, setNCarte] = useState(0);
+  const [face, setFace] = useState(false);
   const [travail, setTravail] = useState(false);
 
   /* Entrées qui n'ont pas encore donné de flashcard. */
@@ -8584,12 +8611,12 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
         ))}
 
         <div className="flex gap-1 shrink-0" style={{ background: T.card, borderRadius: 16, padding: 4 }}>
-          {[[false, "Interface", "▤"], [true, "Carnet", "✎"]].map(([v, l, ic]) => (
-            <button key={l} onClick={() => setVueCahier(v)} title={l} aria-label={l}
+          {[["liste", "Interface", "▤"], ["cahier", "Carnet", "✎"], ["revision", "Réviser", "◉"]].map(([v, l, ic]) => (
+            <button key={l} onClick={() => setMode(v)} title={l} aria-label={l}
               className="doux flex flex-col items-center justify-center"
-              style={{ width: 52, borderRadius: 13,
-                background: vueCahier === v ? T.accent : "transparent",
-                color: vueCahier === v ? "#fff" : T.ink2 }}>
+              style={{ width: 50, borderRadius: 13,
+                background: mode === v ? T.accent : "transparent",
+                color: mode === v ? "#fff" : T.ink2 }}>
               <span style={{ fontSize: 17, lineHeight: 1.1 }}>{ic}</span>
               <span style={{ fontSize: 9.5, fontWeight: 700, marginTop: 2 }}>{l}</span>
             </button>
@@ -8597,6 +8624,87 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
         </div>
       </div>
 
+      {mode === "revision" && (() => {
+        const paquet = cartesCarnet;
+        if (!paquet.length) return (
+          <p className="text-sm py-6" style={{ color: T.ink2, lineHeight: 1.7 }}>
+            Aucune flashcard pour l'instant. Passe en mode Interface et appuie sur
+            « Créer les flashcards » en bas de page, ou importe un fichier de cartes.
+          </p>
+        );
+        const k = Math.min(nCarte, paquet.length - 1);
+        const c = paquet[k];
+        const taux = c.vues ? Math.round((c.reussies || 0) / c.vues * 100) : null;
+
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs" style={{ color: T.ink2 }}>
+                Carte {k + 1} sur {paquet.length}
+              </span>
+              {taux !== null && (
+                <span className="text-xs px-2 py-0.5" style={{ borderRadius: 999,
+                  background: T.paper, color: couleur(taux), fontWeight: 700 }}>
+                  {taux}% sur {c.vues} passage(s)
+                </span>
+              )}
+            </div>
+
+            <div className="h-1.5 rounded-full mb-4" style={{ background: "#152438" }}>
+              <div className="doux h-1.5 rounded-full"
+                style={{ width: ((k + 1) / paquet.length) * 100 + "%", background: T.accent }} />
+            </div>
+
+            <div onClick={() => setFace(!face)} className="mb-4"
+              style={{ perspective: 1400, cursor: "pointer", minHeight: 210 }}>
+              <div style={{ position: "relative", minHeight: 210, transformStyle: "preserve-3d",
+                transition: "transform 520ms cubic-bezier(0.22, 1, 0.36, 1)",
+                transform: face ? "rotateY(180deg)" : "none" }}>
+                <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden", background: T.accentPale, borderRadius: 24,
+                  padding: "24px 22px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                  <p className="text-xs mb-3" style={{ color: T.accent, fontWeight: 800, letterSpacing: "0.1em" }}>QUESTION</p>
+                  <p style={{ fontFamily: lecture, fontSize: 18.5, lineHeight: 1.55, color: "#E2ECF6" }}>{c.recto}</p>
+                  <p className="text-xs mt-5" style={{ color: T.accent, fontWeight: 600 }}>Appuie pour retourner</p>
+                </div>
+                <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden", transform: "rotateY(180deg)", background: T.card,
+                  border: `1.5px solid ${T.line}`, borderRadius: 24, padding: "24px 22px", overflowY: "auto",
+                  display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                  <p className="text-xs mb-3" style={{ color: T.ink2, fontWeight: 800, letterSpacing: "0.1em" }}>RÉPONSE</p>
+                  <p style={{ fontFamily: lecture, fontSize: 17, lineHeight: 1.7, color: "#D6E4F1",
+                    whiteSpace: "pre-wrap" }}>{c.verso}</p>
+                </div>
+              </div>
+            </div>
+
+            {face && (
+              <div className="flex gap-3 vue">
+                {[["Faux", false, T.bas], ["Bon", true, T.haut]].map(([l, ok, coul]) => (
+                  <button key={l} onClick={() => {
+                    if (onNoterCarnet) onNoterCarnet(c.id, ok);
+                    setFace(false);
+                    setNCarte(k + 1 >= paquet.length ? 0 : k + 1);
+                  }} className="flex-1 py-3.5 doux"
+                    style={{ background: coul, color: "#0E1A29", borderRadius: 999, fontWeight: 800, fontSize: 15 }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!face && (
+              <button onClick={() => { setFace(false); setNCarte(k + 1 >= paquet.length ? 0 : k + 1); }}
+                className="w-full py-3 doux" style={{ borderRadius: 999, border: `1px solid ${T.line}`,
+                  color: T.ink2, fontWeight: 600, fontSize: 13 }}>
+                Passer
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
+      {mode !== "revision" && (<>
       <p className="text-xs mb-4" style={{ color: T.ink2, lineHeight: 1.6 }}>
         {vueCahier
           ? "Glisse latéralement pour tourner les pages."
@@ -8761,7 +8869,7 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
 
             {envoi && String(envoi).startsWith("cartes:") && (
               <p className="text-xs mt-2 vue" style={{ color: T.haut, fontWeight: 600 }}>
-                {envoi.slice(7)} flashcard(s) créée(s). Tu les retrouves dans l'onglet Exercice.
+                {envoi.slice(7)} flashcard(s) créée(s). Bascule en mode Réviser ci-dessus.
               </p>
             )}
             {envoi === "sanscle" && (
@@ -8904,6 +9012,7 @@ function Erreurs({ erreurs, items, colleges, onAjouter, onModifier, onBasculer, 
           })}
         </>
       )}
+      </>)}
     </div>
   );
 }
