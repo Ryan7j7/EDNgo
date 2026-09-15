@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v106";
+const VERSION = "v110";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -486,6 +486,7 @@ const ONGLETS = [
   ["cours",     "Cours",     "✦", "ECG, radio",         "#E8A0C4", "#241320"],
   ["cards",     "My Cards",  "✎", "Mes fiches",         "#8DD16A", "#111F0E"],
   ["ai",        "My AI",     "✳", "Poser une question", "#7C9BF0", "#101529"],
+  ["recompenses", "Récompenses", "✦", "Mes badges", "#EAAE43", "#2A1F08"],
   ["stats",     "Statistiques", "◫", "Temps et volume", "#8DD16A", "#111F0E"],
   ["horloge",   "Horloge",   "◷", "Minuteur, chrono",   "#7C9BF0", "#101529"],
   ["resultats", "Résultats", "◔", "Mes scores",         "#EFC94C", "#211D0C"],
@@ -2302,7 +2303,18 @@ const CLE_LCA = "edngo-lca";
 const CLE_CARNET = "edngo-carnet-cartes";
 
 function derniereLca() { try { return localStorage.getItem(CLE_LCA) || ""; } catch (e) { return ""; } }
-function noterLca() { try { localStorage.setItem(CLE_LCA, auj()); } catch (e) {} }
+const CLE_BADGES = "edngo-badges";
+const CLE_LCA_J = "edngo-lca-journal";
+function journalLca() {
+  try { return JSON.parse(localStorage.getItem(CLE_LCA_J) || "[]"); } catch (e) { return []; }
+}
+function noterLca() {
+  try {
+    localStorage.setItem(CLE_LCA, auj());
+    const j = journalLca();
+    if (!j.includes(auj())) localStorage.setItem(CLE_LCA_J, JSON.stringify([...j, auj()].slice(-200)));
+  } catch (e) {}
+}
 
 /* Premier dimanche strictement postérieur à une date : la prochaine échéance. */
 function dimancheApres(ref) {
@@ -2329,6 +2341,43 @@ function etatLca() {
 function lcaDu() { return !etatLca().aJour; }
 
 const CLE_AUTO = "edngo-auto-placement";
+
+/* Rythme de stage : une semaine sur deux à partir du lundi 28 septembre 2026.
+   Sert à présélectionner les journées quand on applique un modèle. */
+const STAGE_DEBUT = "2026-09-28";
+
+function enStage(j) {
+  if (j < STAGE_DEBUT) return false;
+  const sem = Math.round(
+    (lundiDe(new Date(j + "T12:00:00")) - lundiDe(new Date(STAGE_DEBUT + "T12:00:00"))) / (7 * 86400000));
+  return sem >= 0 && sem % 2 === 0;
+}
+
+function semaineDe(j) {
+  const l = lundiDe(new Date(j + "T12:00:00"));
+  return [...Array(7)].map((_, k) => {
+    const d = new Date(l);
+    d.setDate(d.getDate() + k);
+    return iso(d);
+  });
+}
+
+/* Les jours ouvrés des prochaines semaines de stage. */
+function semainesStage(j, nbSemaines) {
+  const out = [];
+  const l = lundiDe(new Date(j + "T12:00:00"));
+  for (let s = 0; s < (nbSemaines || 6) * 2 && out.length < (nbSemaines || 6) * 5; s++) {
+    const d = new Date(l);
+    d.setDate(d.getDate() + s * 7);
+    if (!enStage(iso(d))) continue;
+    for (let k = 0; k < 5; k++) {
+      const x = new Date(d);
+      x.setDate(x.getDate() + k);
+      out.push(iso(x));
+    }
+  }
+  return out;
+}
 
 /* Ajoute un item dans le premier créneau libre d'une journée et renvoie la
    nouvelle liste de tâches. Utilisée par le bouton et par le placement
@@ -2658,6 +2707,7 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
   const [noter, setNoter] = useState(null);
   const [noteOuverte, setNoteOuverte] = useState(false);
   const [apercuModele, setApercuModele] = useState(null);
+  const [joursChoisis, setJoursChoisis] = useState([]);
   const [remplace, setRemplace] = useState(null);
 
   /* Placement automatique des révisions échues, si l'option est active.
@@ -2817,11 +2867,39 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
 
   const appliquerModele = () => {
     if (!apercuModele) return;
-    const nouvelles = apercuModele.prevus.filter((p) => !p.conflit)
-      .map(({ motif, conflit, ...t }) => t);
-    if (nouvelles.length) onMaj([...taches, ...nouvelles]);
-    setApercuModele(null);
-    setModeles(false);
+    const cibles = joursChoisis.length ? joursChoisis : [jour];
+    const m = MODELES.find((x) => x.id === apercuModele.id);
+    let liste = taches;
+    cibles.forEach((j) => {
+      const occupees = liste.filter((t) => t.date === j).map(normaliser)
+        .map((t) => [t.debut, t.debut + (t.duree || 1)]);
+      const libre = (a, b) => !occupees.some(([x, y]) => a < y && b > x);
+      const poses = new Set(liste.filter((t) => t.itemId).map((t) => t.itemId));
+      const file = [
+        ...revisionsDuJour(items, j, 7).filter(({ i }) => !poses.has(i.id)).map(({ i }) => i),
+        ...items.filter((i) => (i.comp || 0) > 0 && (i.comp || 0) < 4 && !poses.has(i.id))
+          .sort((a, b) => (a.comp || 0) - (b.comp || 0)),
+      ];
+      let k = 0;
+      m.creneaux.forEach((c, idx) => {
+        if (!libre(c.debut, c.debut + c.duree)) return;
+        let type = "perso", itemId = null, texte_ = c.texte;
+        if (c.texte === null) {
+          if (apercuModele.garni) {
+            const x = file[k++];
+            if (x) { type = "item"; itemId = x.id; texte_ = ""; poses.add(x.id); }
+            else texte_ = "À définir";
+          } else texte_ = "À définir";
+        }
+        liste = [...liste, {
+          id: Math.random().toString(36).slice(2, 9), date: j, type, itemId, texte: texte_,
+          debut: c.debut, duree: c.duree, fait: false,
+          teinte: c.libre === false ? 7 : (liste.length + idx) % BLOCS.length,
+        }];
+      });
+    });
+    onMaj(liste);
+    setApercuModele(null); setModeles(false); setJoursChoisis([]);
   };
 
   /* duplique la journée affichée vers une autre date */
@@ -3081,12 +3159,79 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                   );
                 })}
 
+                {/* choix des jours d'application */}
+                <div style={{ borderTop: `1px solid ${T.line}`, marginTop: 12, paddingTop: 12 }}>
+                  <div className="flex items-baseline justify-between mb-2">
+                    <span className="text-xs uppercase" style={{ letterSpacing: "0.09em", color: T.ink2 }}>
+                      Appliquer à
+                    </span>
+                    <span className="text-xs" style={{ color: joursChoisis.length ? T.accent : T.ink2, fontWeight: 700 }}>
+                      {joursChoisis.length ? `${joursChoisis.length} jour(s)` : "ce jour seulement"}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {[["Cette semaine", () => semaineDe(jour)],
+                      ["Semaine suivante", () => semaineDe(iso(new Date(new Date(jour + "T12:00:00").getTime() + 7 * 86400000)))],
+                      ["Lun–Ven", () => semaineDe(jour).filter((j) => {
+                        const d2 = new Date(j + "T12:00:00").getDay();
+                        return d2 >= 1 && d2 <= 5;
+                      })],
+                      ["Semaines de stage", () => semainesStage(jour, 6)],
+                      ["Effacer", () => []]].map(([l, f]) => (
+                      <button key={l} onClick={() => setJoursChoisis(f())}
+                        className="px-3 py-1.5 text-xs doux"
+                        style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.ink2, fontWeight: 600 }}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* quatre semaines à partir du lundi courant */}
+                  {[0, 1, 2, 3].map((sem) => {
+                    const base = new Date(jour + "T12:00:00");
+                    base.setDate(base.getDate() - ((base.getDay() + 6) % 7) + sem * 7);
+                    return (
+                      <div key={sem} className="flex gap-1 mb-1.5">
+                        {[...Array(7)].map((_, k) => {
+                          const d2 = new Date(base);
+                          d2.setDate(d2.getDate() + k);
+                          const j = iso(d2);
+                          const actif = joursChoisis.includes(j);
+                          const stage = enStage(j);
+                          const n = taches.filter((t) => t.date === j).length;
+                          return (
+                            <button key={k} onClick={() => setJoursChoisis((l) =>
+                              l.includes(j) ? l.filter((x) => x !== j) : [...l, j])}
+                              className="flex-1 doux flex flex-col items-center justify-center"
+                              style={{ height: 42, borderRadius: 10, minWidth: 0,
+                                background: actif ? T.accent : stage ? "#2A1F3A" : T.card,
+                                border: `1px solid ${j === jour ? T.accent : "transparent"}`,
+                                color: actif ? "#fff" : stage ? "#B48CC9" : T.ink2 }}>
+                              <span style={{ fontSize: 8.5, textTransform: "uppercase", opacity: 0.85 }}>
+                                {JOURS[(d2.getDay() + 6) % 7]}
+                              </span>
+                              <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.1 }}>{d2.getDate()}</span>
+                              {n > 0 && <span style={{ width: 4, height: 4, borderRadius: 999,
+                                background: actif ? "#fff" : T.moyen, marginTop: 1 }} />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+
+                  <p className="text-xs mt-1" style={{ color: T.ink2, lineHeight: 1.5 }}>
+                    Les jours en violet sont tes semaines de stage. Les points signalent une journée déjà remplie.
+                  </p>
+                </div>
+
                 <div className="flex items-center gap-2 mt-3">
                   <button onClick={appliquerModele} disabled={!retenus.length}
                     className="flex-1 py-3 doux"
                     style={{ borderRadius: 999, background: retenus.length ? T.accent : "#24384F",
                       color: "#fff", fontWeight: 700, fontSize: 13 }}>
-                    Appliquer à cette journée
+                    {joursChoisis.length > 1 ? `Appliquer aux ${joursChoisis.length} jours` : "Appliquer à cette journée"}
                   </button>
                   {apercuModele.garni && (
                     <button onClick={() => setApercuModele({ ...apercuModele,
@@ -4600,6 +4745,226 @@ function Stats({ items, colleges, resultats, cartes, qcms }) {
   );
 }
 
+/* ================== récompenses ================== */
+
+/* Une journée est dite tenue si elle comportait au moins une tâche et que
+   tout a été coché. Les badges récompensent la régularité et la justesse,
+   jamais le simple volume : remplir son planning de blocs vides ne doit rien
+   rapporter. */
+function journeesTenues(taches) {
+  const par = {};
+  taches.forEach((t) => {
+    if (!t.date) return;
+    par[t.date] = par[t.date] || { n: 0, faits: 0 };
+    par[t.date].n++;
+    if (t.fait) par[t.date].faits++;
+  });
+  return Object.keys(par).filter((j) => par[j].n > 0 && par[j].n === par[j].faits).sort();
+}
+
+/* Plus longue série de jours consécutifs, et série en cours. */
+function serieJours(jours) {
+  if (!jours.length) return { max: 0, actuelle: 0 };
+  const ecart = (a, b) =>
+    Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
+  let max = 1, cur = 1;
+  for (let k = 1; k < jours.length; k++) {
+    if (ecart(jours[k - 1], jours[k]) === 1) cur++;
+    else cur = 1;
+    if (cur > max) max = cur;
+  }
+  const dernier = jours[jours.length - 1];
+  const d = ecart(dernier, auj());
+  return { max, actuelle: d <= 1 ? cur : 0 };
+}
+
+/* Semaines consécutives où la LCA a été faite. */
+function semainesLca(journal) {
+  const l = [...new Set(journal || [])].sort();
+  if (!l.length) return 0;
+  let n = 1;
+  for (let k = l.length - 1; k > 0; k--) {
+    const ecart = Math.round(
+      (new Date(l[k] + "T12:00:00") - new Date(l[k - 1] + "T12:00:00")) / 86400000);
+    if (ecart <= 10) n++; else break;
+  }
+  return n;
+}
+
+function calculerBadges({ taches, seances, items, erreurs, cartesCarnet, journalLca }) {
+  const tenues = journeesTenues(taches);
+  const { max: serieMax, actuelle } = serieJours(tenues);
+  const notes = (seances || []).map((s) => s.note).filter((n) => typeof n === "number");
+  const bonnes = notes.filter((n) => n >= 16).length;
+  const excellentes = notes.filter((n) => n >= 18).length;
+  const compris = (items || []).filter((i) => (i.comp || 0) === 4).length;
+  const engages = (items || []).filter((i) => (i.comp || 0) > 0).length;
+  const notesCarnet = (erreurs || []).length;
+  const cartes = (cartesCarnet || []).length;
+  const aTransformer = (erreurs || []).filter((e) => !e.carteFaite).length;
+  const lca = semainesLca(journalLca);
+
+  /* Cinq séances de suite au-dessus de 16 : c'est la constance qui compte. */
+  let suiteBonnes = 0, meilleure = 0;
+  [...(seances || [])].sort((a, b) => a.t - b.t).forEach((s) => {
+    if (s.note >= 16) { suiteBonnes++; if (suiteBonnes > meilleure) meilleure = suiteBonnes; }
+    else suiteBonnes = 0;
+  });
+
+  const B = (id, fam, nom, desc, ic, val, seuil) =>
+    ({ id, fam, nom, desc, ic, val, seuil, obtenu: val >= seuil, progres: Math.min(1, val / seuil) });
+
+  return [
+    B("reg3", "Régularité", "Premier élan", "3 journées tenues d'affilée", "◔", serieMax, 3),
+    B("reg7", "Régularité", "Semaine pleine", "7 journées tenues d'affilée", "◑", serieMax, 7),
+    B("reg14", "Régularité", "Quinzaine", "14 journées tenues d'affilée", "◕", serieMax, 14),
+    B("reg30", "Régularité", "Mois complet", "30 journées tenues d'affilée", "●", serieMax, 30),
+    B("reg90", "Régularité", "Trimestre", "90 journées tenues d'affilée", "✦", serieMax, 90),
+    B("tot10", "Régularité", "Dix journées", "10 journées tenues au total", "▴", tenues.length, 10),
+    B("tot50", "Régularité", "Cinquante", "50 journées tenues au total", "▴▴", tenues.length, 50),
+    B("tot150", "Régularité", "Cent cinquante", "150 journées tenues au total", "▴▴▴", tenues.length, 150),
+
+    B("note16", "Justesse", "Bonne copie", "Une séance à 16/20 ou plus", "✓", bonnes, 1),
+    B("note18", "Justesse", "Excellence", "Une séance à 18/20 ou plus", "★", excellentes, 1),
+    B("suite5", "Justesse", "Constance", "5 séances de suite à 16/20 ou plus", "★★", meilleure, 5),
+    B("seances20", "Justesse", "Endurance", "20 séances notées", "◫", notes.length, 20),
+    B("seances60", "Justesse", "Marathon", "60 séances notées", "◫◫", notes.length, 60),
+
+    B("lca4", "Lecture critique", "Article par semaine", "4 semaines de LCA sans retard", "◧", lca, 4),
+    B("lca12", "Lecture critique", "Trimestre de LCA", "12 semaines de LCA sans retard", "◨", lca, 12),
+
+    B("carnet10", "Lucidité", "Carnet ouvert", "10 entrées dans le carnet d'erreurs", "✎", notesCarnet, 10),
+    B("carnet40", "Lucidité", "Carnet nourri", "40 entrées dans le carnet", "✎✎", notesCarnet, 40),
+    B("cartes25", "Lucidité", "Recyclage", "25 flashcards tirées de tes erreurs", "◉", cartes, 25),
+    B("ajour", "Lucidité", "Carnet à jour", "Aucune entrée en attente de flashcard", "◎",
+      notesCarnet > 0 && aTransformer === 0 ? 1 : 0, 1),
+
+    B("comp20", "Progression", "Socle", "20 items bien compris", "▰", compris, 20),
+    B("comp60", "Progression", "Fondations", "60 items bien compris", "▰▰", compris, 60),
+    B("comp150", "Progression", "Charpente", "150 items bien compris", "▰▰▰", compris, 150),
+    B("engage100", "Progression", "Terrain défriché", "100 items entamés dans la grille", "◰", engages, 100),
+  ];
+}
+
+function Recompenses({ taches, seances, items, erreurs, cartesCarnet, journalLca }) {
+  const badges = calculerBadges({ taches, seances, items, erreurs, cartesCarnet, journalLca });
+  const obtenus = badges.filter((b) => b.obtenu);
+  const tenues = journeesTenues(taches);
+  const { max, actuelle } = serieJours(tenues);
+
+  const familles = [...new Set(badges.map((b) => b.fam))];
+  const TON = {
+    "Régularité": { fg: "#EAAE43", bg: "#2A1F08" },
+    "Justesse": { fg: "#35B48C", bg: "#0F241D" },
+    "Lecture critique": { fg: "#7FD8D0", bg: "#0F2E2C" },
+    "Lucidité": { fg: "#B48CC9", bg: "#1E1428" },
+    "Progression": { fg: "#7C9BF0", bg: "#141B33" },
+  };
+
+  /* Le prochain badge accessible, pour donner un cap concret. */
+  const prochain = badges.filter((b) => !b.obtenu).sort((a, b) => b.progres - a.progres)[0];
+
+  return (
+    <div>
+      <h2 className="mb-1" style={{ fontFamily: serif, fontSize: 26 }}>Récompenses</h2>
+      <p className="text-xs mb-4" style={{ color: T.ink2, lineHeight: 1.6 }}>
+        Ces badges récompensent la régularité et la justesse, pas le volume.
+        Une journée compte si elle avait des tâches et que tout a été coché.
+      </p>
+
+      <div className="flex flex-wrap gap-2.5 mb-4">
+        <div style={{ background: TON["Régularité"].bg, borderRadius: 18, padding: "13px 15px", flex: "1 1 130px" }}>
+          <p className="text-xs uppercase" style={{ letterSpacing: "0.09em", color: T.ink2 }}>Série en cours</p>
+          <p style={{ fontFamily: serif, fontSize: 28, lineHeight: 1.15, color: TON["Régularité"].fg }}>
+            {actuelle} j
+          </p>
+          <p className="text-xs" style={{ color: T.ink2 }}>record : {max} j</p>
+        </div>
+        <div style={{ background: T.card, borderRadius: 18, padding: "13px 15px", flex: "1 1 130px" }}>
+          <p className="text-xs uppercase" style={{ letterSpacing: "0.09em", color: T.ink2 }}>Badges</p>
+          <p style={{ fontFamily: serif, fontSize: 28, lineHeight: 1.15 }}>
+            {obtenus.length}<span style={{ fontSize: 16, color: T.ink2 }}> / {badges.length}</span>
+          </p>
+          <p className="text-xs" style={{ color: T.ink2 }}>{tenues.length} journée(s) tenue(s)</p>
+        </div>
+      </div>
+
+      {prochain && (
+        <div className="ombre mb-5" style={{ background: T.card, borderRadius: 18, padding: "13px 15px" }}>
+          <p className="text-xs uppercase mb-1" style={{ letterSpacing: "0.09em", color: T.ink2 }}>
+            Le plus proche
+          </p>
+          <div className="flex items-center gap-3">
+            <span className="shrink-0 flex items-center justify-center"
+              style={{ width: 38, height: 38, borderRadius: 12, background: TON[prochain.fam].bg,
+                color: TON[prochain.fam].fg, fontSize: 16 }}>{prochain.ic}</span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm" style={{ fontWeight: 700 }}>{prochain.nom}</span>
+              <span className="block text-xs" style={{ color: T.ink2 }}>{prochain.desc}</span>
+            </span>
+            <span className="text-xs shrink-0" style={{ color: TON[prochain.fam].fg, fontWeight: 800 }}>
+              {Math.min(prochain.val, prochain.seuil)} / {prochain.seuil}
+            </span>
+          </div>
+          <div className="h-2 rounded-full mt-2" style={{ background: "#152438" }}>
+            <div className="doux h-2 rounded-full"
+              style={{ width: prochain.progres * 100 + "%", background: TON[prochain.fam].fg }} />
+          </div>
+        </div>
+      )}
+
+      {familles.map((f) => {
+        const lot = badges.filter((b) => b.fam === f);
+        const n = lot.filter((b) => b.obtenu).length;
+        const p = TON[f] || { fg: T.ink2, bg: T.card };
+        return (
+          <div key={f} className="mb-5">
+            <div className="flex items-baseline gap-2 mb-2">
+              <span style={{ width: 5, height: 14, borderRadius: 999, background: p.fg, display: "inline-block" }} />
+              <span className="text-sm" style={{ color: p.fg, fontWeight: 800 }}>{f}</span>
+              <span className="text-xs" style={{ color: T.ink2 }}>{n} / {lot.length}</span>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {lot.map((b) => (
+                <div key={b.id} style={{
+                  flex: "1 1 150px", minWidth: 0,
+                  background: b.obtenu ? p.bg : T.card, borderRadius: 16, padding: "12px 13px",
+                  borderLeft: `4px solid ${b.obtenu ? p.fg : T.line}`,
+                  opacity: b.obtenu ? 1 : 0.62,
+                }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span style={{ fontSize: 15, color: b.obtenu ? p.fg : T.ink2 }}>{b.ic}</span>
+                    <span className="text-sm truncate" style={{ fontWeight: 700,
+                      color: b.obtenu ? p.fg : T.ink2 }}>{b.nom}</span>
+                  </div>
+                  <p className="text-xs" style={{ color: T.ink2, lineHeight: 1.45 }}>{b.desc}</p>
+                  {!b.obtenu && (
+                    <>
+                      <div className="h-1.5 rounded-full mt-2" style={{ background: "#152438" }}>
+                        <div className="doux h-1.5 rounded-full"
+                          style={{ width: b.progres * 100 + "%", background: p.fg, opacity: 0.8 }} />
+                      </div>
+                      <p className="text-xs mt-1" style={{ color: T.ink2 }}>
+                        {Math.min(b.val, b.seuil)} / {b.seuil}
+                      </p>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      <p className="text-xs" style={{ color: T.ink2, lineHeight: 1.7 }}>
+        Une remarque : ces badges mesurent ce que l'application peut voir, pas ce que tu as
+        réellement appris. Ils servent à tenir le rythme les jours sans envie, rien de plus.
+      </p>
+    </div>
+  );
+}
+
 /* ================== Exercice ================== */
 function Exercice({ items, colleges, cartes, qcms, resultats, onLancer, onRattrapage }) {
   const [mode, setMode] = useState("faibles");
@@ -5547,7 +5912,7 @@ function App() {
           return;
         }
         const lot = Array.isArray(d) ? { resumes: d }
-          : (d.resumes || d.flashcards || d.qcms || d.cartesCarnet) ? d : null;
+          : (d.resumes || d.flashcards || d.qcms || d.cartesCarnet || d.erreurs) ? d : null;
         if (lot) {
           const parNum = {};
           items.forEach((i) => (parNum[i.numero] = i.id));
@@ -5606,6 +5971,22 @@ function App() {
 
           let msg = `Importé : ${nr} résumé(s), ${nf} flashcard(s), ${nq} QCM.`;
           if (ncar) msg += ` ${ncar} carte(s) dans le carnet d'erreurs.`;
+
+          let nerr = 0;
+          if (Array.isArray(lot.erreurs)) {
+            const nv = [];
+            lot.erreurs.forEach((e) => {
+              if (!e || !e.texte) return;
+              if (erreurs.some((x) => x.texte === e.texte) || nv.some((x) => x.texte === e.texte)) {
+                doublons++; return;
+              }
+              nv.push({ id: uid(), texte: e.texte, genre: e.genre || "erreur", date: auj(),
+                itemId: e.numero ? (parNum[Number(e.numero)] || null) : null, carteFaite: auj() });
+              nerr++;
+            });
+            if (nv.length) setErreurs((l) => [...nv, ...l]);
+          }
+          if (nerr) msg += ` ${nerr} note(s) dans le carnet.`;
           if (doublons) msg += ` ${doublons} doublon(s) ignoré(s).`;
           if (orphelins.size) msg += ` Items introuvables : ${[...orphelins].join(", ")}.`;
           setAlerte(msg);
@@ -5850,6 +6231,9 @@ function App() {
             onLancer={(p) => p.length ? setSession(p) : setAlerte("Aucun exercice ne correspond à ce choix.")} />
         ) : vue === "ai" ? (
           <MyAI items={items} colleges={colleges} resultats={resultats} />
+        ) : vue === "recompenses" ? (
+          <Recompenses taches={taches} seances={seances} items={items}
+            erreurs={erreurs} cartesCarnet={cartesCarnet} journalLca={journalLca()} />
         ) : vue === "horloge" ? (
           <Horloge />
         ) : vue === "stats" ? (
@@ -5883,7 +6267,7 @@ function App() {
           <Accueil items={items} colleges={colleges} cartes={cartes} qcms={qcms}
             taches={taches} onTaches={majTaches} onPlanning={() => setVue("todo")}
             onComprendre={(id, v) => definirComp(id, v)}
-            onVue={setVue} erreurs={erreurs}
+            onVue={setVue} erreurs={erreurs} seances={seances} cartesCarnet={cartesCarnet}
             onNoteItem={(id, txt) => setItems((l) => l.map((i) => i.id === id ? { ...i, note: txt } : i))}
             notesJour={notesJour}
             onNoteJour={(j, v) => setNotesJour((n) => ({ ...n, [j]: v }))}
@@ -6043,7 +6427,8 @@ function Selecteur({ items, colleges, cartes, qcms, onLancer, onFermer }) {
 function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, onOuvrirItem,
   testes, solides, jours, nbExos, nbAnnales, onSession, onSessionCollege, revision, onRevision,
   rattrapage, onRattrapage, onGrille, onExporter, onImporter, onLancerPaquet, place, poidsAffiche,
-  onComprendre, onNoteItem, notesJour, onNoteJour, repousses, onReporter, onVue, erreurs = [] }) {
+  onComprendre, onNoteItem, notesJour, onNoteJour, repousses, onReporter, onVue, erreurs = [],
+  seances = [], cartesCarnet = [] }) {
   const [rappel, setRappel] = useState(false);
   const [tic, setTic] = useState(0);
 
@@ -6087,6 +6472,22 @@ function Accueil({ items, colleges, cartes, qcms, taches, onTaches, onPlanning, 
            affiché à l'ouverture et refermable pour la journée. */
         if (avisFerme) return null;
         const avis = [];
+
+        /* Badges obtenus depuis la dernière visite : on félicite une fois. */
+        const gagnes = calculerBadges({ taches, seances, items, erreurs, cartesCarnet,
+          journalLca: journalLca() }).filter((b) => b.obtenu);
+        let connus = [];
+        try { connus = JSON.parse(localStorage.getItem(CLE_BADGES) || "[]"); } catch (x) {}
+        const neufs = gagnes.filter((b) => !connus.includes(b.id));
+        if (neufs.length) avis.push({
+          ic: "✦", ton: "#EAAE43",
+          titre: neufs.length === 1 ? `Badge obtenu : ${neufs[0].nom}` : `${neufs.length} nouveaux badges`,
+          detail: neufs.map((b) => b.nom).join(" · "),
+          action: { l: "Voir", f: () => {
+            try { localStorage.setItem(CLE_BADGES, JSON.stringify(gagnes.map((b) => b.id))); } catch (x) {}
+            onVue("recompenses");
+          } },
+        });
 
         /* Le prochain examen passe avant tout le reste. */
         const ex = prochainExamen(auj());
