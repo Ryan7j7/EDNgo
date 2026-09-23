@@ -475,7 +475,7 @@ const CATALOGUE = {
   ],
 };
 
-const VERSION = "v111";
+const VERSION = "v112";
 const ONGLETS = [
   ["accueil",   "Accueil",   "◆", "Ta journée",         "#54A9EA", "#0E1E2E"],
   ["todo",      "À faire",   "◷", "Planning",           "#F0A63C", "#211A0F"],
@@ -2213,7 +2213,7 @@ const lundiDe = (d) => {
   x.setHours(12, 0, 0, 0);
   return x;
 };
-const HT = 46; // hauteur d'une heure, en pixels
+const HT = 64; // hauteur d'une heure, en pixels (32 px par demi-heure)
 
 const BLOCS = [
   { bg: "#1B3A57", fg: "#9AD2F5", bar: "#54A9EA" },
@@ -2756,9 +2756,15 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
     if (remplace) {
       const anc = taches.find((t) => t.id === remplace);
       onMaj(taches.map((t) => t.id === remplace
-        ? { ...nouveau, id: t.id, debut: t.debut, duree: t.duree, teinte: anc ? anc.teinte : nouveau.teinte }
+        ? { ...nouveau, id: t.id, fait: !!t.fait, teinte: anc && anc.teinte != null ? anc.teinte : nouveau.teinte }
         : t));
     } else onMaj([...taches, nouveau]);
+    setTexte(""); setCreneau(null); setRemplace(null);
+  };
+  /* enregistre seulement le nouvel horaire du bloc en cours de modification */
+  const enregistrerHoraire = () => {
+    if (!remplace) return;
+    modifier(remplace, { debut: creneau, duree: Math.max(0.5, fin - creneau) });
     setTexte(""); setCreneau(null); setRemplace(null);
   };
   const modifier = (id, patch) => onMaj(taches.map((t) => t.id === id ? { ...normaliser(t), ...patch } : t));
@@ -2790,9 +2796,10 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
   };
   const bouger = (e) => {
     if (!glisse) return;
-    const pas = Math.round((e.clientY - glisse.y0) / HT);
+    /* pas d'une demi-heure */
+    const pas = Math.round((e.clientY - glisse.y0) / (HT / 2)) / 2;
     if (glisse.mode === "duree") {
-      const d = Math.min(24 - glisse.debut0, Math.max(1, glisse.duree0 + pas));
+      const d = Math.min(24 - glisse.debut0, Math.max(0.5, glisse.duree0 + pas));
       setApercu((a) => (a && a.duree === d ? a : { id: glisse.id, debut: glisse.debut0, duree: d }));
     } else {
       const h = Math.min(24 - glisse.duree0, Math.max(0, glisse.debut0 + pas));
@@ -2806,11 +2813,15 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
     /* appui simple sur un créneau laissé « à définir » : on ouvre la saisie */
     if (p && p.mode === "debut" && e && Date.now() - p.t < 450
         && Math.abs((e.clientX ?? p.x) - p.x) < 9 && Math.abs((e.clientY ?? p.y) - p.y) < 9) {
-      const t = taches.find((x) => x.id === p.id) || p.tache;
-      if (t && t.type === "perso" && t.texte === "À définir") {
+      const t0 = taches.find((x) => x.id === p.id) || p.tache;
+      /* appui simple sur n'importe quel bloc : on ouvre la modification
+         (horaire, texte ou item), sans devoir supprimer puis recréer */
+      if (t0) {
+        const t = normaliser(t0);
         setApercu(null); setGlisse(null);
         setRemplace(t.id); setCreneau(t.debut);
-        setFin(t.debut + (t.duree || 1)); setTexte("");
+        setFin(t.debut + (t.duree || 1));
+        setTexte(t.type === "perso" && t.texte !== "À définir" ? t.texte : "");
         return;
       }
     }
@@ -3313,22 +3324,26 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
         <div style={{ position: "relative", height: 24 * HT + 14, paddingTop: 8 }}
           onPointerMove={bouger} onPointerUp={lacher} onPointerCancel={lacher}>
 
-          {[...Array(25)].map((_, h) => (
-            <div key={h} onClick={() => { setSelection(null); if (h < 24 && !occupe(h)) { setCreneau(h); setFin(h + 1); setTexte(""); } }}
+          {[...Array(49)].map((_, k) => {
+            /* une ligne toutes les 30 minutes : 11:00, 11:30, 12:00… */
+            const h = k / 2, pleine = k % 2 === 0, dispo = h < 24 && !occupe(h);
+            return (
+            <div key={k} onClick={() => { setSelection(null); if (dispo) { setCreneau(h); setFin(occupe(h + 0.5) ? h + 0.5 : Math.min(24, h + 1)); setTexte(""); setRemplace(null); } }}
               style={{
-                position: "absolute", top: h * HT, left: 0, right: 0, height: h < 24 ? HT : 1,
-                borderTop: `1px solid ${h % 6 === 0 ? "#3A5573" : "#1E3149"}`,
-                cursor: h < 24 && !occupe(h) ? "pointer" : "default", display: "flex", alignItems: "flex-start",
+                position: "absolute", top: h * HT, left: 0, right: 0, height: h < 24 ? HT / 2 : 1,
+                borderTop: pleine ? `1px solid ${h % 6 === 0 ? "#3A5573" : "#1E3149"}` : "1px dashed #17283C",
+                cursor: dispo ? "pointer" : "default", display: "flex", alignItems: "flex-start",
               }}>
               <span style={{
-                width: 52, paddingLeft: 14, marginTop: -7, fontSize: 11,
-                color: h % 6 === 0 ? "#9DB3C8" : "#6E859E", fontWeight: h % 6 === 0 ? 800 : 600,
+                width: 52, paddingLeft: 14, marginTop: -7, fontSize: pleine ? 11 : 10,
+                color: !pleine ? "#4F6680" : h % 6 === 0 ? "#9DB3C8" : "#6E859E", fontWeight: pleine && h % 6 === 0 ? 800 : 600,
                 background: "inherit",
               }}>
-                {String(h % 24).padStart(2, "0")}:00
+                {String(Math.floor(h) % 24).padStart(2, "0")}:{pleine ? "00" : "30"}
               </span>
             </div>
-          ))}
+            );
+          })}
 
           {place.map((t) => {
             const i = t.type === "item" ? items.find((x) => x.id === t.itemId) : null;
@@ -3426,9 +3441,19 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
                 boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
               }}>
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs shrink-0" style={{ color: T.accent, fontWeight: 700 }}>
-                  {hFmt(creneau)}
-                </span>
+                {remplace && (
+                  <span className="text-xs shrink-0" style={{ color: T.ink2, fontWeight: 700 }}>Modifier</span>
+                )}
+                <select value={creneau} onChange={(e) => {
+                    const d = Number(e.target.value), dur = fin - creneau;
+                    setCreneau(d); setFin(Math.min(24, d + Math.max(0.5, dur)));
+                  }}
+                  className="text-xs px-2 py-1 shrink-0"
+                  style={{ borderRadius: 999, border: `1px solid ${T.line}`, color: T.accent, fontWeight: 700 }}>
+                  {[...Array(48)].map((_, k) => (
+                    <option key={k} value={k / 2}>{hFmt(k / 2)}</option>
+                  ))}
+                </select>
                 <span className="text-xs shrink-0" style={{ color: T.ink2 }}>→</span>
                 <select value={fin} onChange={(e) => setFin(Number(e.target.value))}
                   className="text-xs px-2 py-1 shrink-0"
@@ -3482,9 +3507,21 @@ function Planning({ taches, onMaj, items, colleges, onOuvrirItem, onComprendre, 
               {texte.trim() && (
                 <button onClick={() => ajouter("perso", null, texte.trim())} className="text-xs mt-2 px-3 py-1.5 doux"
                   style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 600 }}>
-                  Ajouter tel quel
+                  {remplace ? "Enregistrer" : "Ajouter tel quel"}
                 </button>
               )}
+              {remplace && !texte.trim() && (() => {
+                /* bloc existant : on peut juste changer l'horaire, sans retaper le contenu */
+                const t = taches.find((x) => x.id === remplace);
+                if (!t || (t.type === "perso" && t.texte === "À définir")) return null;
+                const it = t.type === "item" ? items.find((x) => x.id === t.itemId) : null;
+                return (
+                  <button onClick={enregistrerHoraire} className="text-xs mt-2 px-3 py-1.5 doux"
+                    style={{ borderRadius: 999, background: T.accent, color: "#fff", fontWeight: 600 }}>
+                    Garder « {it ? `${it.numero}. ${it.titre}` : t.texte} » et enregistrer l'horaire
+                  </button>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -3871,7 +3908,7 @@ function JourneeAccueil({ taches, onMaj, items, colleges, onOuvrirItem, onPlanni
                 <button onClick={() => i && onOuvrirItem(i.id)} className="flex-1 text-left min-w-0 py-3 pr-3">
                   <span className="flex items-center gap-2 mb-1">
                     <span className="text-xs" style={{ color: b.fg, fontWeight: 800 }}>
-                      {String(t.debut).padStart(2, "0")}:00 – {String(t.debut + (t.duree || 1)).padStart(2, "0")}:00
+                      {hFmt(t.debut)} – {hFmt(t.debut + (t.duree || 1))}
                     </span>
                     {passe && (
                       <span className="text-xs px-2 py-0.5" style={{ background: "rgba(0,0,0,0.3)", color: b.fg, borderRadius: 999 }}>
